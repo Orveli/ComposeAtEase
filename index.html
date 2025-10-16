@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Compose At Ease</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.min.js"></script>
+    <script defer src="script.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="top-bar">
+        <button class="drawer-toggle" aria-expanded="false" aria-controls="settings-drawer">
+          Settings
+        </button>
+        <div class="playhead-container">
+          <div class="playhead"></div>
+          <div class="ticks" id="tick-track"></div>
+        </div>
+      </header>
+
+      <section class="drawer" id="settings-drawer" hidden>
+        <div class="drawer-section">
+          <label>
+            BPM
+            <input type="range" id="bpm" min="60" max="160" value="100" />
+            <output for="bpm" id="bpm-display">100</output>
+          </label>
+          <label>
+            Root
+            <select id="root">
+              <option value="C">C</option>
+              <option value="C#">C#</option>
+              <option value="D">D</option>
+              <option value="D#">D#</option>
+              <option value="E">E</option>
+              <option value="F">F</option>
+              <option value="F#">F#</option>
+              <option value="G">G</option>
+              <option value="G#">G#</option>
+              <option value="A">A</option>
+              <option value="A#">A#</option>
+              <option value="B">B</option>
+            </select>
+          </label>
+          <label>
+            Scale
+            <select id="scale">
+              <option value="major">Major</option>
+              <option value="minor">Minor</option>
+              <option value="dorian">Dorian</option>
+            </select>
+          </label>
+          <label>
+            Grid
+            <select id="grid">
+              <option value="8">1/8</option>
+              <option value="16">1/16</option>
+            </select>
+          </label>
+          <label class="toggle">
+            <span>Metronome</span>
+            <input type="checkbox" id="metronome" checked />
+          </label>
+          <label>
+            Master Volume
+            <input type="range" id="volume" min="-40" max="0" value="-6" />
+            <output id="volume-display" for="volume">-6 dB</output>
+          </label>
+        </div>
+      </section>
+
+      <main class="workspace">
+        <aside class="octave-controls">
+          <button id="octave-up" aria-label="Scroll up one octave">▲</button>
+          <button id="octave-down" aria-label="Scroll down one octave">▼</button>
+        </aside>
+        <div class="lanes-wrapper">
+          <div class="lanes" id="lanes"></div>
+        </div>
+      </main>
+
+      <footer class="control-bar">
+        <button id="record" class="primary">Rec</button>
+        <div class="control-group" role="group" aria-label="Bars">
+          <button data-bars="1" class="toggle active">1</button>
+          <button data-bars="2" class="toggle">2</button>
+          <button data-bars="4" class="toggle">4</button>
+        </div>
+        <div class="control-group" role="group" aria-label="Tool">
+          <button data-tool="note" class="toggle active">Note</button>
+          <button data-tool="chord" class="toggle">Chord</button>
+        </div>
+        <div class="control-group" role="group" aria-label="Length Mode">
+          <button data-length="tap" class="toggle active">Tap</button>
+          <button data-length="hold" class="toggle">Hold</button>
+        </div>
+        <div class="control-group" role="group" aria-label="Chord Degree">
+          <button data-degree="1" class="toggle active">I</button>
+          <button data-degree="2" class="toggle">ii</button>
+          <button data-degree="3" class="toggle">iii</button>
+          <button data-degree="4" class="toggle">IV</button>
+          <button data-degree="5" class="toggle">V</button>
+          <button data-degree="6" class="toggle">vi</button>
+          <button data-degree="7" class="toggle">vii°</button>
+        </div>
+      </footer>
+      <div class="status" id="status"></div>
+    </div>
+  </body>
+</html>
