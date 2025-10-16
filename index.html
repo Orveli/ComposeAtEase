@@ -72,13 +72,27 @@
         </div>
       </header>
       <main class="layout">
-        <section class="panel">
+        <div class="track-bar">
+          <div id="trackTabs" class="track-tabs"></div>
+          <div class="track-actions">
+            <button id="addSynthTrack" class="ghost">+ Synth Track</button>
+            <button id="addDrumTrack" class="ghost">+ Drum Track</button>
+          </div>
+        </div>
+        <section class="panel" id="synthPanel">
           <header class="panel-header">
-            <h2>Melody</h2>
-            <div class="octave-controls">
-              <button id="octaveDown" aria-label="Octave down">−</button>
-              <div id="octaveLabel">Oct 4</div>
-              <button id="octaveUp" aria-label="Octave up">+</button>
+            <h2 id="synthTitle">Synth</h2>
+            <div class="panel-tools">
+              <label class="control-item compact">
+                Preset
+                <select id="presetSelect"></select>
+              </label>
+              <button id="chordModeBtn" class="toggle-btn" aria-pressed="false">Chord Mode</button>
+              <div class="octave-controls">
+                <button id="octaveDown" aria-label="Octave down">−</button>
+                <div id="octaveLabel">Oct 4</div>
+                <button id="octaveUp" aria-label="Octave up">+</button>
+              </div>
             </div>
           </header>
           <div class="grid" id="melodyGrid">
@@ -87,9 +101,9 @@
             <div class="playhead" id="melodyPlayhead"></div>
           </div>
         </section>
-        <section class="panel">
+        <section class="panel hidden" id="drumPanel">
           <header class="panel-header">
-            <h2>Drums</h2>
+            <h2 id="drumTitle">Drums</h2>
           </header>
           <div class="grid" id="drumGrid">
             <div class="lanes" id="drumLanes"></div>
