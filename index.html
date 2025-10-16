@@ -95,6 +95,141 @@
               </div>
             </div>
           </header>
+          <div class="synth-editor" aria-label="Synth settings">
+            <div class="synth-editor__top">
+              <label class="control-item compact">
+                Waveform
+                <select id="oscillatorType"></select>
+              </label>
+              <div class="synth-status" id="synthStatus" aria-live="polite"></div>
+            </div>
+            <div class="synth-envelope" role="group" aria-label="Amplitude envelope">
+              <label class="synth-envelope__control">
+                <span>Attack</span>
+                <input type="range" id="envelopeAttack" value="0.01" />
+                <span id="envelopeAttackValue" class="synth-envelope__value">0.010s</span>
+              </label>
+              <label class="synth-envelope__control">
+                <span>Decay</span>
+                <input type="range" id="envelopeDecay" value="0.10" />
+                <span id="envelopeDecayValue" class="synth-envelope__value">0.100s</span>
+              </label>
+              <label class="synth-envelope__control">
+                <span>Sustain</span>
+                <input type="range" id="envelopeSustain" value="0.60" />
+                <span id="envelopeSustainValue" class="synth-envelope__value">0.60</span>
+              </label>
+              <label class="synth-envelope__control">
+                <span>Release</span>
+                <input type="range" id="envelopeRelease" value="0.30" />
+                <span id="envelopeReleaseValue" class="synth-envelope__value">0.300s</span>
+              </label>
+            </div>
+            <div class="synth-filter" role="group" aria-label="Filter">
+              <div class="synth-filter__row">
+                <label class="control-item compact">
+                  Filter Type
+                  <select id="filterType"></select>
+                </label>
+                <label class="synth-filter__control">
+                  <span>Cutoff</span>
+                  <input type="range" id="filterFrequency" value="1800" />
+                  <span id="filterFrequencyValue" class="synth-filter__value">1.80 kHz</span>
+                </label>
+                <label class="synth-filter__control">
+                  <span>Resonance</span>
+                  <input type="range" id="filterQ" value="0.80" />
+                  <span id="filterQValue" class="synth-filter__value">0.80</span>
+                </label>
+              </div>
+            </div>
+            <div class="synth-effects" aria-label="Effects rack">
+              <div class="synth-effects__group synth-effects__group--disabled" id="chorusControls">
+                <div class="synth-effects__header">
+                  <label class="toggle">
+                    <input type="checkbox" id="chorusEnabled" />
+                    <span>Chorus</span>
+                  </label>
+                </div>
+                <div class="synth-effects__controls">
+                  <label class="synth-effects__control">
+                    <span>Rate</span>
+                    <input type="range" id="chorusRate" value="1.60" />
+                    <span class="synth-effects__value" id="chorusRateValue">0.00 Hz</span>
+                  </label>
+                  <label class="synth-effects__control">
+                    <span>Depth</span>
+                    <input type="range" id="chorusDepth" value="0.45" />
+                    <span class="synth-effects__value" id="chorusDepthValue">0%</span>
+                  </label>
+                  <label class="synth-effects__control">
+                    <span>Mix</span>
+                    <input type="range" id="chorusMix" value="0.35" />
+                    <span class="synth-effects__value" id="chorusMixValue">0%</span>
+                  </label>
+                </div>
+              </div>
+              <div class="synth-effects__group synth-effects__group--disabled" id="delayControls">
+                <div class="synth-effects__header">
+                  <label class="toggle">
+                    <input type="checkbox" id="delayEnabled" />
+                    <span>Delay</span>
+                  </label>
+                </div>
+                <div class="synth-effects__controls">
+                  <label class="synth-effects__control">
+                    <span>Time</span>
+                    <input type="range" id="delayTime" value="0.24" />
+                    <span class="synth-effects__value" id="delayTimeValue">0.000s</span>
+                  </label>
+                  <label class="synth-effects__control">
+                    <span>Feedback</span>
+                    <input type="range" id="delayFeedback" value="0.32" />
+                    <span class="synth-effects__value" id="delayFeedbackValue">0%</span>
+                  </label>
+                  <label class="synth-effects__control">
+                    <span>Mix</span>
+                    <input type="range" id="delayMix" value="0.28" />
+                    <span class="synth-effects__value" id="delayMixValue">0%</span>
+                  </label>
+                </div>
+              </div>
+              <div class="synth-effects__group synth-effects__group--disabled" id="reverbControls">
+                <div class="synth-effects__header">
+                  <label class="toggle">
+                    <input type="checkbox" id="reverbEnabled" />
+                    <span>Reverb</span>
+                  </label>
+                </div>
+                <div class="synth-effects__controls">
+                  <label class="synth-effects__control">
+                    <span>Decay</span>
+                    <input type="range" id="reverbDecay" value="2.20" />
+                    <span class="synth-effects__value" id="reverbDecayValue">0.000s</span>
+                  </label>
+                  <label class="synth-effects__control">
+                    <span>Pre-delay</span>
+                    <input type="range" id="reverbPreDelay" value="0.03" />
+                    <span class="synth-effects__value" id="reverbPreDelayValue">0 ms</span>
+                  </label>
+                  <label class="synth-effects__control">
+                    <span>Mix</span>
+                    <input type="range" id="reverbMix" value="0.35" />
+                    <span class="synth-effects__value" id="reverbMixValue">0%</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="synth-save">
+              <input
+                type="text"
+                id="customPresetName"
+                placeholder="Custom preset name"
+                aria-label="Custom preset name"
+              />
+              <button id="saveCustomPreset" class="ghost">Save Preset</button>
+            </div>
+          </div>
           <div class="grid" id="melodyGrid">
             <div class="lanes" id="melodyLanes"></div>
             <div class="ticks" id="melodyTicks"></div>
