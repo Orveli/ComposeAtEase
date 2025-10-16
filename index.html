@@ -21,72 +21,83 @@
   </head>
   <body>
     <div class="app">
-      <header class="top-handle" id="drawerToggle">▲ Session</header>
-      <section class="drawer" id="drawer">
-        <div class="drawer-section">
-          <label for="bpm">BPM</label>
-          <input type="range" id="bpm" min="60" max="160" value="100" />
-          <span id="bpmValue">100</span>
+      <header class="top-bar">
+        <div class="transport">
+          <button id="playBtn" class="primary">Play</button>
+          <button id="stopBtn">Stop</button>
         </div>
-        <div class="drawer-row">
-          <label>Scale</label>
-          <select id="scaleSelect">
-            <option value="Major">Major</option>
-            <option value="Minor">Minor</option>
-          </select>
+        <div class="top-controls">
+          <label class="control-item">
+            Quantization
+            <select id="gridSelect">
+              <option value="8">1/8</option>
+              <option value="16">1/16</option>
+            </select>
+          </label>
+          <label class="control-item">
+            BPM
+            <div class="range-control">
+              <input type="range" id="bpm" min="60" max="180" value="100" />
+              <span id="bpmValue">100</span>
+            </div>
+          </label>
+          <label class="control-item">
+            Root
+            <select id="rootSelect">
+              <option>C</option>
+              <option>C#</option>
+              <option>D</option>
+              <option>Eb</option>
+              <option>E</option>
+              <option>F</option>
+              <option>F#</option>
+              <option>G</option>
+              <option>Ab</option>
+              <option>A</option>
+              <option>Bb</option>
+              <option>B</option>
+            </select>
+          </label>
+          <label class="control-item">
+            Scale
+            <select id="scaleSelect">
+              <option value="Major">Major</option>
+              <option value="Minor">Minor</option>
+            </select>
+          </label>
+          <label class="control-item">
+            Volume
+            <input type="range" id="masterVolume" min="-36" max="0" value="-8" />
+          </label>
         </div>
-        <div class="drawer-row">
-          <label>Root</label>
-          <select id="rootSelect">
-            <option>C</option>
-            <option>C#</option>
-            <option>D</option>
-            <option>Eb</option>
-            <option>E</option>
-            <option>F</option>
-            <option>F#</option>
-            <option>G</option>
-            <option>Ab</option>
-            <option>A</option>
-            <option>Bb</option>
-            <option>B</option>
-          </select>
-        </div>
-        <div class="drawer-row">
-          <label>Grid</label>
-          <select id="gridSelect">
-            <option value="8">1/8</option>
-            <option value="16">1/16</option>
-          </select>
-        </div>
-        <div class="drawer-section">
-          <label for="masterVolume">Master</label>
-          <input type="range" id="masterVolume" min="-36" max="0" value="-8" />
-        </div>
-        <div class="drawer-section">
-          <label for="metronomeVolume">Metronome</label>
-          <input type="range" id="metronomeVolume" min="-36" max="0" value="-16" />
-        </div>
-      </section>
-      <main class="workspace">
-        <div class="octave-controls">
-          <button id="octaveUp" aria-label="Octave up">▲</button>
-          <div id="octaveLabel">Oct 4</div>
-          <button id="octaveDown" aria-label="Octave down">▼</button>
-        </div>
-        <div class="grid" id="grid">
-          <div class="lanes" id="lanes"></div>
-          <div class="ticks" id="ticks"></div>
-          <div class="playhead" id="playhead"></div>
-        </div>
+      </header>
+      <main class="layout">
+        <section class="panel">
+          <header class="panel-header">
+            <h2>Melody</h2>
+            <div class="octave-controls">
+              <button id="octaveDown" aria-label="Octave down">−</button>
+              <div id="octaveLabel">Oct 4</div>
+              <button id="octaveUp" aria-label="Octave up">+</button>
+            </div>
+          </header>
+          <div class="grid" id="melodyGrid">
+            <div class="lanes" id="melodyLanes"></div>
+            <div class="ticks" id="melodyTicks"></div>
+            <div class="playhead" id="melodyPlayhead"></div>
+          </div>
+        </section>
+        <section class="panel">
+          <header class="panel-header">
+            <h2>Drums</h2>
+          </header>
+          <div class="grid" id="drumGrid">
+            <div class="lanes" id="drumLanes"></div>
+            <div class="ticks" id="drumTicks"></div>
+            <div class="playhead" id="drumPlayhead"></div>
+          </div>
+        </section>
       </main>
-      <footer class="controls">
-        <button id="recBtn" class="control">REC</button>
-        <button id="barsBtn" class="control">Bars: 1</button>
-        <button id="toolBtn" class="control">Tool: Note</button>
-        <button id="lengthBtn" class="control">Length: Tap</button>
-        <button id="degreeBtn" class="control">Degree: I</button>
-      </footer>
     </div>
   </body>
 </html>
