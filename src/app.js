@@ -46,6 +46,22 @@ const masterVolume = new Tone.Volume(-8).toDestination();
 const trackInstruments = new Map();
 const trackParts = new Map();
 const pointerInteractions = new Map();
+const suppressedNoteClicks = new Set();
+const hasMotionSupport = typeof DeviceMotionEvent !== 'undefined';
+const hasOrientationSupport = typeof DeviceOrientationEvent !== 'undefined';
+const imuState = {
+  active: false,
+  supported: hasMotionSupport || hasOrientationSupport,
+  sampleCount: 0,
+  acceleration: { x: 0, y: 0, z: 0, magnitude: 0 },
+  rotationRate: { alpha: 0, beta: 0, gamma: 0, magnitude: 0 },
+  orientation: { alpha: null, beta: null, gamma: null },
+  stats: {
+    accel: { max: 0, total: 0 },
+    rotation: { max: 0, total: 0 },
+  },
+  lastUpdate: null,
+};
 
 const melodyGridEl = document.getElementById('melodyGrid');
 const melodyLanesEl = document.getElementById('melodyLanes');
@@ -77,6 +93,28 @@ const synthPanelEl = document.getElementById('synthPanel');
 const drumPanelEl = document.getElementById('drumPanel');
 const synthTitleEl = document.getElementById('synthTitle');
 const drumTitleEl = document.getElementById('drumTitle');
+const toggleImuPanelBtn = document.getElementById('toggleImuPanel');
+const imuPanelEl = document.getElementById('imuPanel');
+const imuStatusEl = document.getElementById('imuStatus');
+const imuStartBtn = document.getElementById('imuStartBtn');
+const imuSampleCountEl = document.getElementById('imuSampleCount');
+const imuLastUpdateEl = document.getElementById('imuLastUpdate');
+const imuAccelPeakEl = document.getElementById('imuAccelPeak');
+const imuRotationPeakEl = document.getElementById('imuRotationPeak');
+const imuAccelXEl = document.getElementById('imuAccelX');
+const imuAccelYEl = document.getElementById('imuAccelY');
+const imuAccelZEl = document.getElementById('imuAccelZ');
+const imuAccelMagEl = document.getElementById('imuAccelMag');
+const imuAccelAvgEl = document.getElementById('imuAccelAvg');
+const imuRotAlphaEl = document.getElementById('imuRotAlpha');
+const imuRotBetaEl = document.getElementById('imuRotBeta');
+const imuRotGammaEl = document.getElementById('imuRotGamma');
+const imuRotMagEl = document.getElementById('imuRotMag');
+const imuRotAvgEl = document.getElementById('imuRotAvg');
+const imuOrientAlphaEl = document.getElementById('imuOrientAlpha');
+const imuOrientBetaEl = document.getElementById('imuOrientBeta');
+const imuOrientGammaEl = document.getElementById('imuOrientGamma');
+const imuSupportMessageEl = document.getElementById('imuSupportMessage');
 
 function getTotalSlots() {
   return state.bars * state.grid;
@@ -293,7 +331,7 @@ function renderSynthLanes(track) {
   normalizeMelodyLaneIndices();
   melodyLanesEl.innerHTML = '';
   const lanes = getMelodyLanes(track);
-  melodyLanesEl.style.gridTemplateRows = `repeat(${lanes.length}, 1fr)`;
+  melodyLanesEl.style.gridTemplateRows = `repeat(${lanes.length}, minmax(64px, 1fr))`;
   lanes.forEach((lane) => {
     const laneEl = document.createElement('div');
     laneEl.className = 'lane';
@@ -304,10 +342,7 @@ function renderSynthLanes(track) {
     const label = document.createElement('strong');
     label.textContent = lane.name;
     laneEl.appendChild(label);
-    laneEl.addEventListener('pointerdown', handleMelodyLanePointerDown);
-    laneEl.addEventListener('pointermove', handleMelodyLanePointerMove);
-    laneEl.addEventListener('pointerup', handleMelodyLanePointerUp);
-    laneEl.addEventListener('pointercancel', handleMelodyLanePointerCancel);
+    laneEl.addEventListener('click', handleMelodyLaneClick);
     melodyLanesEl.appendChild(laneEl);
   });
   renderSynthNotes(track);
@@ -346,7 +381,7 @@ function renderSynthNotes(track) {
     block.addEventListener('pointermove', handleMelodyBlockPointerMove);
     block.addEventListener('pointerup', endBlockInteraction);
     block.addEventListener('pointercancel', endBlockInteraction);
-    block.addEventListener('dblclick', () => deleteMelodyNote(note.id, track.id));
+    block.addEventListener('click', (event) => handleNoteBlockClick(event, note, 'melody'));
 
     handle.addEventListener('pointerdown', (event) => startMelodyResize(event, note));
     handle.addEventListener('pointermove', handleMelodyResizeMove);
@@ -363,7 +398,7 @@ function renderDrumPanel(track) {
 
 function renderDrumLanes(track) {
   drumLanesEl.innerHTML = '';
-  drumLanesEl.style.gridTemplateRows = `repeat(${DRUM_LANES.length}, 1fr)`;
+  drumLanesEl.style.gridTemplateRows = `repeat(${DRUM_LANES.length}, minmax(64px, 1fr))`;
   DRUM_LANES.forEach((lane) => {
     const laneEl = document.createElement('div');
     laneEl.className = 'lane label-drums';
@@ -371,10 +406,7 @@ function renderDrumLanes(track) {
     const label = document.createElement('strong');
     label.textContent = lane.label;
     laneEl.appendChild(label);
-    laneEl.addEventListener('pointerdown', handleDrumLanePointerDown);
-    laneEl.addEventListener('pointermove', handleDrumLanePointerMove);
-    laneEl.addEventListener('pointerup', handleDrumLanePointerUp);
-    laneEl.addEventListener('pointercancel', handleDrumLanePointerCancel);
+    laneEl.addEventListener('click', handleDrumLaneClick);
     drumLanesEl.appendChild(laneEl);
   });
   renderDrumNotes(track);
@@ -412,7 +444,7 @@ function renderDrumNotes(track) {
     block.addEventListener('pointermove', handleDrumBlockPointerMove);
     block.addEventListener('pointerup', endBlockInteraction);
     block.addEventListener('pointercancel', endBlockInteraction);
-    block.addEventListener('dblclick', () => deleteDrumNote(note.id, track.id));
+    block.addEventListener('click', (event) => handleNoteBlockClick(event, note, 'drum'));
 
     handle.addEventListener('pointerdown', (event) => startDrumResize(event, note));
     handle.addEventListener('pointermove', handleDrumResizeMove);
@@ -427,6 +459,16 @@ function getBoundaryFromEvent(event, gridEl) {
   const x = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
   const slotWidth = rect.width / totalSlots;
   return Math.round(x / slotWidth);
+}
+
+function getSlotFromEvent(event, gridEl) {
+  const totalSlots = getTotalSlots();
+  if (totalSlots <= 0) return 0;
+  const rect = gridEl.getBoundingClientRect();
+  const width = rect.width || 1;
+  const clampedX = Math.min(Math.max(event.clientX - rect.left, 0), Math.max(width - 0.01, 0));
+  const slotWidth = width / totalSlots;
+  return Math.min(totalSlots - 1, Math.floor(clampedX / slotWidth));
 }
 
 function createNotesForLane(track, laneIndex, slot) {
@@ -445,127 +487,71 @@ function createNotesForLane(track, laneIndex, slot) {
     }));
 }
 
-function handleMelodyLanePointerDown(event) {
+function handleMelodyLaneClick(event) {
   const track = getActiveTrack();
   if (!track || track.type !== 'synth') return;
   const laneIndex = Number(event.currentTarget.dataset.laneIndex);
-  const pointerId = event.pointerId;
-  const totalSlots = getTotalSlots();
-  if (!totalSlots) return;
-  event.currentTarget.setPointerCapture(pointerId);
-  const startBoundary = Math.min(totalSlots - 1, getBoundaryFromEvent(event, melodyGridEl));
-  const notes = createNotesForLane(track, laneIndex, startBoundary);
-  if (!notes.length) return;
-  notes.forEach((note) => track.notes.push(note));
-  pointerInteractions.set(pointerId, {
-    type: 'melody-create',
-    notes,
-    startBoundary,
-    trackId: track.id,
-  });
+  const slot = getSlotFromEvent(event, melodyGridEl);
+  toggleMelodyNotes(track, laneIndex, slot);
+}
+
+function toggleMelodyNotes(track, laneIndex, slot) {
+  const candidates = createNotesForLane(track, laneIndex, slot);
+  if (!candidates.length) return;
+  const laneIndices = candidates.map((note) => note.laneIndex);
+  const existing = track.notes.filter(
+    (note) => note.slot === slot && laneIndices.includes(note.laneIndex),
+  );
+  if (existing.length) {
+    track.notes = track.notes.filter(
+      (note) => !(note.slot === slot && laneIndices.includes(note.laneIndex)),
+    );
+  } else {
+    candidates.forEach((candidate) => {
+      const alreadyExists = track.notes.some(
+        (note) => note.slot === candidate.slot && note.laneIndex === candidate.laneIndex,
+      );
+      if (!alreadyExists) {
+        track.notes.push(candidate);
+      }
+    });
+  }
   renderSynthNotes(track);
+  rebuildSequences();
 }
 
-function handleMelodyLanePointerMove(event) {
-  const interaction = pointerInteractions.get(event.pointerId);
-  if (!interaction || interaction.type !== 'melody-create') return;
-  updateCreatedNote(interaction, event, melodyGridEl);
-}
-
-function handleMelodyLanePointerUp(event) {
-  finalizeLaneInteraction(event);
-}
-
-function handleMelodyLanePointerCancel(event) {
-  finalizeLaneInteraction(event, true);
-}
-
-function handleDrumLanePointerDown(event) {
+function handleDrumLaneClick(event) {
   const track = getActiveTrack();
   if (!track || track.type !== 'drum') return;
   const lane = event.currentTarget.dataset.lane;
-  const pointerId = event.pointerId;
-  const totalSlots = getTotalSlots();
-  if (!totalSlots) return;
-  event.currentTarget.setPointerCapture(pointerId);
-  const startBoundary = Math.min(totalSlots - 1, getBoundaryFromEvent(event, drumGridEl));
-  const note = {
-    id: crypto.randomUUID(),
-    trackId: track.id,
-    lane,
-    slot: startBoundary,
-    len: 1,
-  };
-  track.notes.push(note);
-  pointerInteractions.set(pointerId, {
-    type: 'drum-create',
-    notes: [note],
-    startBoundary,
-    trackId: track.id,
-  });
-  renderDrumNotes(track);
-}
-
-function handleDrumLanePointerMove(event) {
-  const interaction = pointerInteractions.get(event.pointerId);
-  if (!interaction || interaction.type !== 'drum-create') return;
-  updateCreatedNote(interaction, event, drumGridEl);
-}
-
-function handleDrumLanePointerUp(event) {
-  finalizeLaneInteraction(event);
-}
-
-function handleDrumLanePointerCancel(event) {
-  finalizeLaneInteraction(event, true);
-}
-
-function updateCreatedNote(interaction, event, gridEl) {
-  const track = getTrackById(interaction.trackId);
-  if (!track) return;
-  const totalSlots = getTotalSlots();
-  const boundary = Math.max(0, Math.min(getBoundaryFromEvent(event, gridEl), totalSlots));
-  const start = Math.min(interaction.startBoundary, totalSlots - 1);
-  const endBoundary = Math.max(start + 1, boundary);
-  const newLen = Math.max(1, Math.min(totalSlots - start, endBoundary - start));
-  interaction.notes.forEach((note) => {
-    note.slot = start;
-    note.len = newLen;
-  });
-  if (track.type === 'synth') {
-    renderSynthNotes(track);
+  const slot = getSlotFromEvent(event, drumGridEl);
+  const hasExisting = track.notes.some((note) => note.lane === lane && note.slot === slot);
+  if (hasExisting) {
+    track.notes = track.notes.filter((note) => !(note.lane === lane && note.slot === slot));
   } else {
-    renderDrumNotes(track);
+    track.notes.push({
+      id: crypto.randomUUID(),
+      trackId: track.id,
+      lane,
+      slot,
+      len: 1,
+    });
   }
+  renderDrumNotes(track);
+  rebuildSequences();
 }
 
-function finalizeLaneInteraction(event, cancel = false) {
-  const pointerId = event.pointerId;
-  if (event.currentTarget.hasPointerCapture(pointerId)) {
-    event.currentTarget.releasePointerCapture(pointerId);
+function handleNoteBlockClick(event, note, type) {
+  if (suppressedNoteClicks.has(note.id)) {
+    event.stopPropagation();
+    return;
   }
-  const interaction = pointerInteractions.get(pointerId);
-  if (!interaction) return;
-  const track = getTrackById(interaction.trackId);
-  if (track) {
-    if (cancel) {
-      interaction.notes.forEach((note) => {
-        if (track.type === 'synth') {
-          deleteMelodyNote(note.id, track.id);
-        } else {
-          deleteDrumNote(note.id, track.id);
-        }
-      });
-    } else {
-      if (track.type === 'synth') {
-        renderSynthNotes(track);
-      } else {
-        renderDrumNotes(track);
-      }
-      rebuildSequences();
-    }
+  event.stopPropagation();
+  if (type === 'melody') {
+    deleteMelodyNote(note.id, note.trackId);
+  } else {
+    deleteDrumNote(note.id, note.trackId);
   }
-  pointerInteractions.delete(pointerId);
 }
 
 function startMelodyDrag(event, note) {
@@ -578,6 +564,7 @@ function startMelodyDrag(event, note) {
     note,
     offset: pointerSlot - note.slot,
     trackId: note.trackId,
+    preventClick: false,
   });
   event.currentTarget.setPointerCapture(pointerId);
 }
@@ -592,6 +579,7 @@ function handleMelodyBlockPointerMove(event) {
   let newSlot = pointerSlot - interaction.offset;
   newSlot = Math.max(0, Math.min(totalSlots - interaction.note.len, newSlot));
   if (interaction.note.slot !== newSlot) {
+    interaction.preventClick = true;
     interaction.note.slot = newSlot;
     renderSynthNotes(track);
   }
@@ -604,6 +592,7 @@ function startMelodyResize(event, note) {
     type: 'melody-resize',
     note,
     trackId: note.trackId,
+    preventClick: false,
   });
   event.target.setPointerCapture(pointerId);
 }
@@ -618,6 +607,7 @@ function handleMelodyResizeMove(event) {
   const endBoundary = Math.max(interaction.note.slot + 1, boundary);
   const newLen = Math.max(1, Math.min(totalSlots - interaction.note.slot, endBoundary - interaction.note.slot));
   if (interaction.note.len !== newLen) {
+    interaction.preventClick = true;
     interaction.note.len = newLen;
     renderSynthNotes(track);
   }
@@ -633,6 +623,7 @@ function startDrumDrag(event, note) {
     note,
     offset: pointerSlot - note.slot,
     trackId: note.trackId,
+    preventClick: false,
   });
   event.currentTarget.setPointerCapture(pointerId);
 }
@@ -647,6 +638,7 @@ function handleDrumBlockPointerMove(event) {
   let newSlot = pointerSlot - interaction.offset;
   newSlot = Math.max(0, Math.min(totalSlots - interaction.note.len, newSlot));
   if (interaction.note.slot !== newSlot) {
+    interaction.preventClick = true;
     interaction.note.slot = newSlot;
     renderDrumNotes(track);
   }
@@ -659,6 +651,7 @@ function startDrumResize(event, note) {
     type: 'drum-resize',
     note,
     trackId: note.trackId,
+    preventClick: false,
   });
   event.target.setPointerCapture(pointerId);
 }
@@ -673,6 +666,7 @@ function handleDrumResizeMove(event) {
   const endBoundary = Math.max(interaction.note.slot + 1, boundary);
   const newLen = Math.max(1, Math.min(totalSlots - interaction.note.slot, endBoundary - interaction.note.slot));
   if (interaction.note.len !== newLen) {
+    interaction.preventClick = true;
     interaction.note.len = newLen;
     renderDrumNotes(track);
   }
@@ -681,12 +675,16 @@ function handleDrumResizeMove(event) {
 function endBlockInteraction(event) {
   const pointerId = event.pointerId;
   const target = event.currentTarget;
-  if (target.hasPointerCapture(pointerId)) {
+  if (target && target.hasPointerCapture(pointerId)) {
     target.releasePointerCapture(pointerId);
   }
   const interaction = pointerInteractions.get(pointerId);
   if (!interaction) return;
   pointerInteractions.delete(pointerId);
+  if (interaction.preventClick && interaction.note) {
+    suppressedNoteClicks.add(interaction.note.id);
+    setTimeout(() => suppressedNoteClicks.delete(interaction.note.id), 0);
+  }
   const track = getTrackById(interaction.trackId);
   if (!track) return;
   if (interaction.type.startsWith('melody')) {
@@ -711,6 +709,184 @@ function deleteDrumNote(id, trackId) {
   track.notes = track.notes.filter((note) => note.id !== id);
   renderDrumNotes(track);
   rebuildSequences();
+}
+
+function formatNumber(value, digits = 2) {
+  return Number.isFinite(value) ? value.toFixed(digits) : '—';
+}
+
+function resetImuStats() {
+  imuState.sampleCount = 0;
+  imuState.acceleration = { x: 0, y: 0, z: 0, magnitude: 0 };
+  imuState.rotationRate = { alpha: 0, beta: 0, gamma: 0, magnitude: 0 };
+  imuState.orientation = { alpha: null, beta: null, gamma: null };
+  imuState.stats.accel = { max: 0, total: 0 };
+  imuState.stats.rotation = { max: 0, total: 0 };
+  imuState.lastUpdate = null;
+  updateImuDisplay();
+}
+
+function updateImuDisplay() {
+  if (!imuSampleCountEl) return;
+  imuSampleCountEl.textContent = `${imuState.sampleCount}`;
+  imuLastUpdateEl.textContent = imuState.lastUpdate
+    ? new Date(imuState.lastUpdate).toLocaleTimeString()
+    : '—';
+  imuAccelPeakEl.textContent = formatNumber(imuState.stats.accel.max);
+  imuRotationPeakEl.textContent = formatNumber(imuState.stats.rotation.max);
+  imuAccelXEl.textContent = formatNumber(imuState.acceleration.x);
+  imuAccelYEl.textContent = formatNumber(imuState.acceleration.y);
+  imuAccelZEl.textContent = formatNumber(imuState.acceleration.z);
+  imuAccelMagEl.textContent = formatNumber(imuState.acceleration.magnitude);
+  const accelAvg = imuState.sampleCount
+    ? imuState.stats.accel.total / imuState.sampleCount
+    : 0;
+  imuAccelAvgEl.textContent = formatNumber(accelAvg);
+  imuRotAlphaEl.textContent = formatNumber(imuState.rotationRate.alpha);
+  imuRotBetaEl.textContent = formatNumber(imuState.rotationRate.beta);
+  imuRotGammaEl.textContent = formatNumber(imuState.rotationRate.gamma);
+  imuRotMagEl.textContent = formatNumber(imuState.rotationRate.magnitude);
+  const rotAvg = imuState.sampleCount
+    ? imuState.stats.rotation.total / imuState.sampleCount
+    : 0;
+  imuRotAvgEl.textContent = formatNumber(rotAvg);
+  imuOrientAlphaEl.textContent = formatNumber(imuState.orientation.alpha);
+  imuOrientBetaEl.textContent = formatNumber(imuState.orientation.beta);
+  imuOrientGammaEl.textContent = formatNumber(imuState.orientation.gamma);
+}
+
+function updateImuStatusText() {
+  if (!imuStatusEl) return;
+  if (imuPanelEl.classList.contains('hidden')) {
+    imuStatusEl.textContent = 'Hidden';
+  } else if (!imuState.supported) {
+    imuStatusEl.textContent = 'Unsupported';
+  } else if (imuState.active) {
+    imuStatusEl.textContent = 'Live';
+  } else {
+    imuStatusEl.textContent = 'Ready';
+  }
+}
+
+function refreshImuSupportMessage(message) {
+  if (!imuSupportMessageEl) return;
+  if (typeof message === 'string') {
+    imuSupportMessageEl.textContent = message;
+    return;
+  }
+  if (!imuState.supported) {
+    imuSupportMessageEl.textContent = 'IMU sensors are not available in this browser.';
+  } else if (imuState.active) {
+    imuSupportMessageEl.textContent = 'Move your device to view live data.';
+  } else {
+    imuSupportMessageEl.textContent = 'Tap “Start Sensors” to stream motion and orientation data.';
+  }
+}
+
+function updateImuControls() {
+  if (!imuStartBtn) return;
+  imuStartBtn.textContent = imuState.active ? 'Stop Sensors' : 'Start Sensors';
+  imuStartBtn.setAttribute('aria-pressed', imuState.active ? 'true' : 'false');
+  imuStartBtn.disabled = !imuState.supported && !imuState.active;
+}
+
+function stopImuMonitoring() {
+  if (!imuState.active) return;
+  window.removeEventListener('devicemotion', handleDeviceMotion);
+  window.removeEventListener('deviceorientation', handleDeviceOrientation);
+  imuState.active = false;
+  updateImuControls();
+  updateImuStatusText();
+  refreshImuSupportMessage();
+}
+
+async function requestImuPermission() {
+  const requests = [];
+  if (hasMotionSupport && typeof DeviceMotionEvent.requestPermission === 'function') {
+    requests.push(DeviceMotionEvent.requestPermission());
+  }
+  if (hasOrientationSupport && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    requests.push(DeviceOrientationEvent.requestPermission());
+  }
+  if (!requests.length) return;
+  const results = await Promise.all(requests);
+  const granted = results.every((result) => result === 'granted');
+  if (!granted) {
+    throw new Error('Motion sensor permission was denied.');
+  }
+}
+
+async function startImuMonitoring() {
+  if (!imuStartBtn) return;
+  if (imuState.active) {
+    stopImuMonitoring();
+    return;
+  }
+  if (!imuState.supported) {
+    refreshImuSupportMessage('IMU sensors are not supported on this device.');
+    updateImuStatusText();
+    updateImuControls();
+    return;
+  }
+  updateImuStatusText();
+  refreshImuSupportMessage('Grant motion sensor access to begin monitoring.');
+  imuStartBtn.disabled = true;
+  try {
+    await requestImuPermission();
+    resetImuStats();
+    window.addEventListener('devicemotion', handleDeviceMotion);
+    window.addEventListener('deviceorientation', handleDeviceOrientation);
+    imuState.active = true;
+    updateImuControls();
+    updateImuStatusText();
+    refreshImuSupportMessage();
+  } catch (error) {
+    const message = error?.message || 'Unable to access motion sensors.';
+    refreshImuSupportMessage(message);
+  } finally {
+    imuStartBtn.disabled = !imuState.supported && !imuState.active;
+  }
+}
+
+function handleDeviceMotion(event) {
+  if (!imuState.active) return;
+  const accelSource = event.acceleration || event.accelerationIncludingGravity || {};
+  const ax = Number.isFinite(accelSource.x) ? accelSource.x : 0;
+  const ay = Number.isFinite(accelSource.y) ? accelSource.y : 0;
+  const az = Number.isFinite(accelSource.z) ? accelSource.z : 0;
+  const magnitude = Math.sqrt(ax * ax + ay * ay + az * az);
+  imuState.acceleration = { x: ax, y: ay, z: az, magnitude };
+
+  const rotation = event.rotationRate || {};
+  const ra = Number.isFinite(rotation.alpha) ? rotation.alpha : 0;
+  const rb = Number.isFinite(rotation.beta) ? rotation.beta : 0;
+  const rg = Number.isFinite(rotation.gamma) ? rotation.gamma : 0;
+  const rotationMagnitude = Math.sqrt(ra * ra + rb * rb + rg * rg);
+  imuState.rotationRate = {
+    alpha: ra,
+    beta: rb,
+    gamma: rg,
+    magnitude: rotationMagnitude,
+  };
+
+  imuState.sampleCount += 1;
+  imuState.stats.accel.max = Math.max(imuState.stats.accel.max, magnitude);
+  imuState.stats.accel.total += magnitude;
+  imuState.stats.rotation.max = Math.max(imuState.stats.rotation.max, rotationMagnitude);
+  imuState.stats.rotation.total += rotationMagnitude;
+  imuState.lastUpdate = Date.now();
+  updateImuDisplay();
+}
+
+function handleDeviceOrientation(event) {
+  if (!imuState.active) return;
+  imuState.orientation = {
+    alpha: Number.isFinite(event.alpha) ? event.alpha : imuState.orientation.alpha,
+    beta: Number.isFinite(event.beta) ? event.beta : imuState.orientation.beta,
+    gamma: Number.isFinite(event.gamma) ? event.gamma : imuState.orientation.gamma,
+  };
+  imuState.lastUpdate = Date.now();
+  updateImuDisplay();
 }
 function flashNote(id) {
   const blocks = document.querySelectorAll(`.note-block[data-id="${id}"]`);
@@ -928,6 +1104,29 @@ function initControls() {
 
   addSynthTrackBtn.addEventListener('click', addSynthTrack);
   addDrumTrackBtn.addEventListener('click', addDrumTrack);
+
+  if (toggleImuPanelBtn && imuPanelEl) {
+    toggleImuPanelBtn.addEventListener('click', () => {
+      const shouldShow = imuPanelEl.classList.contains('hidden');
+      if (shouldShow) {
+        imuPanelEl.classList.remove('hidden');
+        toggleImuPanelBtn.setAttribute('aria-pressed', 'true');
+        toggleImuPanelBtn.textContent = 'Hide IMU Monitor';
+      } else {
+        imuPanelEl.classList.add('hidden');
+        toggleImuPanelBtn.setAttribute('aria-pressed', 'false');
+        toggleImuPanelBtn.textContent = 'IMU Monitor';
+      }
+      updateImuStatusText();
+      refreshImuSupportMessage();
+    });
+  }
+
+  if (imuStartBtn) {
+    imuStartBtn.addEventListener('click', () => {
+      startImuMonitoring();
+    });
+  }
 }
 
 function init() {
@@ -944,6 +1143,15 @@ function init() {
   ensureInstrumentForTrack(defaultSynth);
   ensureInstrumentForTrack(defaultDrums);
   state.activeTrackId = defaultSynth.id;
+
+  resetImuStats();
+  updateImuControls();
+  updateImuStatusText();
+  refreshImuSupportMessage();
+  if (toggleImuPanelBtn) {
+    toggleImuPanelBtn.textContent = 'IMU Monitor';
+    toggleImuPanelBtn.setAttribute('aria-pressed', 'false');
+  }
 
   renderTrackTabs();
   renderActiveTrack();
