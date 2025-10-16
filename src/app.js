@@ -2210,7 +2210,7 @@ function handleDeviceOrientation(event) {
   renderImuData();
 }
 
-function initializeImuPanel() {
+async function initializeImuPanel() {
   if (!imuToggleBtn || !imuStatusEl) return;
   setupImuVisuals();
   const supported = 'DeviceMotionEvent' in window || 'DeviceOrientationEvent' in window;
@@ -2224,6 +2224,19 @@ function initializeImuPanel() {
   imuToggleBtn.setAttribute('aria-pressed', 'false');
   updateImuStatus('Tap “Start Tracking” to enable sensors');
   renderImuData();
+
+  try {
+    await startImuTracking();
+  } catch (error) {
+    console.error('Automatic IMU start failed', error);
+  }
+
+  if (!imuState.active) {
+    const statusMessage = (imuStatusEl.textContent || '').trim();
+    if (!statusMessage || statusMessage === 'Tap “Start Tracking” to enable sensors') {
+      updateImuStatus('Tap “Start Tracking” to enable sensors');
+    }
+  }
 }
 
 function scaleNotesForGridChange(oldGrid, newGrid) {
