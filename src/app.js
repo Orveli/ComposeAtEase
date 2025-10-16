@@ -1,358 +1,82 @@
-const SCALE_INTERVALS = {
-  Major: [0, 2, 4, 5, 7, 9, 11],
-  Minor: [0, 2, 3, 5, 7, 8, 10],
-};
+import {
+  SCALE_INTERVALS,
+  DRUM_LANES,
+  DEFAULT_SYNTH_CONFIG,
+  SYNTH_PRESETS,
+  DEFAULT_SYNTH_PRESET,
+  OSCILLATOR_TYPES,
+  FILTER_TYPES,
+  ENVELOPE_CONTROL_LIMITS,
+  FILTER_CONTROL_LIMITS,
+  EFFECT_CONTROL_LIMITS,
+  EFFECT_LABELS,
+  IMU_SERIES,
+  IMU_AXES,
+} from './config.js';
+import {
+  state,
+  masterVolume,
+  trackInstruments,
+  trackParts,
+  pointerInteractions,
+  imuState,
+} from './state.js';
+import {
+  melodyGridEl,
+  melodyLanesEl,
+  melodyTicksEl,
+  melodyPlayheadEl,
+  drumGridEl,
+  drumLanesEl,
+  drumTicksEl,
+  drumPlayheadEl,
+  playBtn,
+  stopBtn,
+  gridSelect,
+  bpmInput,
+  bpmValue,
+  scaleSelect,
+  rootSelect,
+  masterVolumeInput,
+  octaveLabel,
+  octaveUpBtn,
+  octaveDownBtn,
+  presetSelect,
+  chordModeBtn,
+  trackTabsEl,
+  addSynthTrackBtn,
+  addDrumTrackBtn,
+  synthPanelEl,
+  drumPanelEl,
+  synthTitleEl,
+  drumTitleEl,
+  synthStatusEl,
+  oscillatorSelect,
+  filterTypeSelect,
+  filterInputs,
+  filterValueEls,
+  envelopeInputs,
+  envelopeValueEls,
+  customPresetNameInput,
+  saveCustomPresetBtn,
+  effectControlElements,
+  imuToggleBtn,
+  imuStatusEl,
+  imuValueEls,
+  imuCubeEl,
+  imuCombinedChartEl,
+} from './ui/elements.js';
+import {
+  formatSeconds,
+  formatLevel,
+  formatFrequency,
+  formatHertz,
+  formatPercent,
+  formatMilliseconds,
+  formatImuValue,
+} from './utils/formatters.js';
 
-const DRUM_LANES = [
-  { id: 'kick', label: 'Kick' },
-  { id: 'snare', label: 'Snare' },
-  { id: 'hat', label: 'Hi-Hat' },
-];
-
-const DEFAULT_SYNTH_CONFIG = {
-  oscillator: { type: 'triangle' },
-  envelope: { attack: 0.01, decay: 0.1, sustain: 0.6, release: 0.3 },
-  filter: { type: 'lowpass', frequency: 1800, q: 0.8 },
-  effects: {
-    chorus: { enabled: false, rate: 1.6, depth: 0.45, mix: 0.35 },
-    delay: { enabled: false, time: 0.24, feedback: 0.32, mix: 0.28 },
-    reverb: { enabled: false, decay: 2.2, preDelay: 0.03, mix: 0.35 },
-  },
-};
-
-const SYNTH_PRESETS = {
-  'Bright Keys': {
-    oscillator: { type: 'triangle' },
-    envelope: { attack: 0.01, decay: 0.1, sustain: 0.6, release: 0.3 },
-    filter: { type: 'highpass', frequency: 420, q: 0.9 },
-    effects: {
-      chorus: { enabled: false, rate: 1.8, depth: 0.4, mix: 0.25 },
-      delay: { enabled: true, time: 0.22, feedback: 0.28, mix: 0.32 },
-      reverb: { enabled: false, decay: 1.8, preDelay: 0.02, mix: 0.22 },
-    },
-  },
-  'Warm Pad': {
-    oscillator: { type: 'sawtooth' },
-    envelope: { attack: 0.4, decay: 0.3, sustain: 0.85, release: 2.4 },
-    filter: { type: 'lowpass', frequency: 1500, q: 0.7 },
-    effects: {
-      chorus: { enabled: true, rate: 0.7, depth: 0.55, mix: 0.45 },
-      delay: { enabled: false, time: 0.3, feedback: 0.2, mix: 0.15 },
-      reverb: { enabled: true, decay: 4.5, preDelay: 0.05, mix: 0.48 },
-    },
-  },
-  'Soft Lead': {
-    oscillator: { type: 'square' },
-    envelope: { attack: 0.02, decay: 0.15, sustain: 0.5, release: 0.5 },
-    filter: { type: 'lowpass', frequency: 2600, q: 1.1 },
-    effects: {
-      chorus: { enabled: false, rate: 1.2, depth: 0.3, mix: 0.2 },
-      delay: { enabled: true, time: 0.32, feedback: 0.42, mix: 0.4 },
-      reverb: { enabled: true, decay: 2.8, preDelay: 0.04, mix: 0.3 },
-    },
-  },
-  'Airy Pluck': {
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.005, decay: 0.2, sustain: 0.25, release: 0.4 },
-    filter: { type: 'bandpass', frequency: 1800, q: 2.4 },
-    effects: {
-      chorus: { enabled: true, rate: 2.2, depth: 0.65, mix: 0.38 },
-      delay: { enabled: true, time: 0.28, feedback: 0.36, mix: 0.35 },
-      reverb: { enabled: true, decay: 3.5, preDelay: 0.06, mix: 0.5 },
-    },
-  },
-};
-
-const DEFAULT_SYNTH_PRESET = 'Bright Keys';
-
-const OSCILLATOR_TYPES = ['sine', 'triangle', 'sawtooth', 'square'];
-
-const FILTER_TYPES = [
-  { value: 'lowpass', label: 'Low-pass' },
-  { value: 'highpass', label: 'High-pass' },
-  { value: 'bandpass', label: 'Band-pass' },
-];
-
-const ENVELOPE_CONTROL_LIMITS = {
-  attack: { min: 0, max: 2, step: 0.005 },
-  decay: { min: 0, max: 2, step: 0.01 },
-  sustain: { min: 0, max: 1, step: 0.01 },
-  release: { min: 0, max: 4, step: 0.01 },
-};
-
-const FILTER_CONTROL_LIMITS = {
-  frequency: { min: 80, max: 12000, step: 1 },
-  q: { min: 0.1, max: 18, step: 0.1 },
-};
-
-const EFFECT_CONTROL_LIMITS = {
-  chorus: {
-    rate: { min: 0.1, max: 8, step: 0.1 },
-    depth: { min: 0, max: 1, step: 0.01 },
-    mix: { min: 0, max: 1, step: 0.01 },
-  },
-  delay: {
-    time: { min: 0, max: 0.8, step: 0.01 },
-    feedback: { min: 0, max: 0.95, step: 0.01 },
-    mix: { min: 0, max: 1, step: 0.01 },
-  },
-  reverb: {
-    decay: { min: 0.2, max: 8, step: 0.1 },
-    preDelay: { min: 0, max: 0.2, step: 0.005 },
-    mix: { min: 0, max: 1, step: 0.01 },
-  },
-};
-
-const EFFECT_LABELS = {
-  chorus: 'Chorus',
-  delay: 'Delay',
-  reverb: 'Reverb',
-};
-
-const state = {
-  bpm: 100,
-  bars: 1,
-  grid: 8,
-  root: 'C',
-  scale: 'Major',
-  playing: false,
-  playheadRaf: null,
-  tracks: [],
-  activeTrackId: null,
-  customPresets: [],
-};
-
-const masterVolume = new Tone.Volume(-8).toDestination();
-const trackInstruments = new Map();
-const trackParts = new Map();
-const pointerInteractions = new Map();
 let pendingSynthSequenceRefresh = null;
-const imuState = {
-  active: false,
-  samples: 0,
-  stats: { accelerationPeak: 0, rotationPeak: 0 },
-  intervalSum: 0,
-  intervalCount: 0,
-  data: {
-    acc: { x: 0, y: 0, z: 0, magnitude: 0 },
-    accG: { x: 0, y: 0, z: 0, magnitude: 0 },
-    rotation: { alpha: 0, beta: 0, gamma: 0, magnitude: 0 },
-    orientation: {
-      alpha: null,
-      beta: null,
-      gamma: null,
-      absolute: false,
-      headingSource: null,
-    },
-    interval: null,
-    lastTimestamp: null,
-  },
-};
-
-const melodyGridEl = document.getElementById('melodyGrid');
-const melodyLanesEl = document.getElementById('melodyLanes');
-const melodyTicksEl = document.getElementById('melodyTicks');
-const melodyPlayheadEl = document.getElementById('melodyPlayhead');
-
-const drumGridEl = document.getElementById('drumGrid');
-const drumLanesEl = document.getElementById('drumLanes');
-const drumTicksEl = document.getElementById('drumTicks');
-const drumPlayheadEl = document.getElementById('drumPlayhead');
-
-const playBtn = document.getElementById('playBtn');
-const stopBtn = document.getElementById('stopBtn');
-const gridSelect = document.getElementById('gridSelect');
-const bpmInput = document.getElementById('bpm');
-const bpmValue = document.getElementById('bpmValue');
-const scaleSelect = document.getElementById('scaleSelect');
-const rootSelect = document.getElementById('rootSelect');
-const masterVolumeInput = document.getElementById('masterVolume');
-const octaveLabel = document.getElementById('octaveLabel');
-const octaveUpBtn = document.getElementById('octaveUp');
-const octaveDownBtn = document.getElementById('octaveDown');
-const presetSelect = document.getElementById('presetSelect');
-const chordModeBtn = document.getElementById('chordModeBtn');
-const trackTabsEl = document.getElementById('trackTabs');
-const addSynthTrackBtn = document.getElementById('addSynthTrack');
-const addDrumTrackBtn = document.getElementById('addDrumTrack');
-const synthPanelEl = document.getElementById('synthPanel');
-const drumPanelEl = document.getElementById('drumPanel');
-const synthTitleEl = document.getElementById('synthTitle');
-const drumTitleEl = document.getElementById('drumTitle');
-const synthStatusEl = document.getElementById('synthStatus');
-const oscillatorSelect = document.getElementById('oscillatorType');
-const filterTypeSelect = document.getElementById('filterType');
-const filterInputs = {
-  frequency: document.getElementById('filterFrequency'),
-  q: document.getElementById('filterQ'),
-};
-const filterValueEls = {
-  frequency: document.getElementById('filterFrequencyValue'),
-  q: document.getElementById('filterQValue'),
-};
-const envelopeInputs = {
-  attack: document.getElementById('envelopeAttack'),
-  decay: document.getElementById('envelopeDecay'),
-  sustain: document.getElementById('envelopeSustain'),
-  release: document.getElementById('envelopeRelease'),
-};
-const envelopeValueEls = {
-  attack: document.getElementById('envelopeAttackValue'),
-  decay: document.getElementById('envelopeDecayValue'),
-  sustain: document.getElementById('envelopeSustainValue'),
-  release: document.getElementById('envelopeReleaseValue'),
-};
-const customPresetNameInput = document.getElementById('customPresetName');
-const saveCustomPresetBtn = document.getElementById('saveCustomPreset');
-const effectControlElements = {
-  chorus: {
-    container: document.getElementById('chorusControls'),
-    enabled: document.getElementById('chorusEnabled'),
-    rateInput: document.getElementById('chorusRate'),
-    rateValue: document.getElementById('chorusRateValue'),
-    depthInput: document.getElementById('chorusDepth'),
-    depthValue: document.getElementById('chorusDepthValue'),
-    mixInput: document.getElementById('chorusMix'),
-    mixValue: document.getElementById('chorusMixValue'),
-  },
-  delay: {
-    container: document.getElementById('delayControls'),
-    enabled: document.getElementById('delayEnabled'),
-    timeInput: document.getElementById('delayTime'),
-    timeValue: document.getElementById('delayTimeValue'),
-    feedbackInput: document.getElementById('delayFeedback'),
-    feedbackValue: document.getElementById('delayFeedbackValue'),
-    mixInput: document.getElementById('delayMix'),
-    mixValue: document.getElementById('delayMixValue'),
-  },
-  reverb: {
-    container: document.getElementById('reverbControls'),
-    enabled: document.getElementById('reverbEnabled'),
-    decayInput: document.getElementById('reverbDecay'),
-    decayValue: document.getElementById('reverbDecayValue'),
-    preDelayInput: document.getElementById('reverbPreDelay'),
-    preDelayValue: document.getElementById('reverbPreDelayValue'),
-    mixInput: document.getElementById('reverbMix'),
-    mixValue: document.getElementById('reverbMixValue'),
-  },
-};
-const imuToggleBtn = document.getElementById('imuToggle');
-const imuStatusEl = document.getElementById('imuStatus');
-const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).reduce(
-  (map, el) => {
-    const key = el.dataset.imu;
-    if (!map[key]) {
-      map[key] = [];
-    }
-    map[key].push(el);
-    return map;
-  },
-  {},
-);
-const imuCubeEl = document.getElementById('imuCube');
-const imuCombinedChartEl = document.getElementById('imuAllChart');
-
-const IMU_SERIES = [
-  {
-    key: 'heading',
-    label: 'Heading',
-    border: 'rgba(251, 191, 36, 0.85)',
-    background: 'rgba(251, 191, 36, 0.15)',
-    axisId: 'orientation',
-  },
-  {
-    key: 'tilt',
-    label: 'Tilt',
-    border: 'rgba(147, 197, 253, 0.85)',
-    background: 'rgba(147, 197, 253, 0.15)',
-    axisId: 'orientation',
-  },
-  {
-    key: 'roll',
-    label: 'Roll',
-    border: 'rgba(236, 72, 153, 0.85)',
-    background: 'rgba(236, 72, 153, 0.15)',
-    axisId: 'orientation',
-  },
-  {
-    key: 'accX',
-    label: 'Acc X',
-    border: 'rgba(248, 113, 113, 0.85)',
-    background: 'rgba(248, 113, 113, 0.15)',
-    axisId: 'acceleration',
-  },
-  {
-    key: 'accY',
-    label: 'Acc Y',
-    border: 'rgba(45, 212, 191, 0.85)',
-    background: 'rgba(45, 212, 191, 0.15)',
-    axisId: 'acceleration',
-  },
-  {
-    key: 'accZ',
-    label: 'Acc Z',
-    border: 'rgba(59, 130, 246, 0.85)',
-    background: 'rgba(59, 130, 246, 0.15)',
-    axisId: 'acceleration',
-  },
-  {
-    key: 'rotAlpha',
-    label: 'Rot α',
-    border: 'rgba(94, 234, 212, 0.85)',
-    background: 'rgba(94, 234, 212, 0.15)',
-    axisId: 'rotation',
-  },
-  {
-    key: 'rotBeta',
-    label: 'Rot β',
-    border: 'rgba(129, 140, 248, 0.85)',
-    background: 'rgba(129, 140, 248, 0.15)',
-    axisId: 'rotation',
-  },
-  {
-    key: 'rotGamma',
-    label: 'Rot γ',
-    border: 'rgba(251, 146, 60, 0.85)',
-    background: 'rgba(251, 146, 60, 0.15)',
-    axisId: 'rotation',
-  },
-];
-
-const IMU_AXES = [
-  {
-    id: 'orientation',
-    label: 'Orientation (°)',
-    min: -200,
-    max: 360,
-    zero: 0,
-    labelColor: 'rgba(251, 191, 36, 0.85)',
-    background: 'rgba(30, 41, 59, 0.35)',
-    gridColor: 'rgba(148, 163, 184, 0.18)',
-    zeroLine: 'rgba(251, 191, 36, 0.45)',
-  },
-  {
-    id: 'acceleration',
-    label: 'Linear acceleration (m/s²)',
-    min: -20,
-    max: 20,
-    zero: 0,
-    labelColor: 'rgba(45, 212, 191, 0.85)',
-    background: 'rgba(15, 118, 110, 0.18)',
-    gridColor: 'rgba(45, 212, 191, 0.14)',
-    zeroLine: 'rgba(45, 212, 191, 0.4)',
-  },
-  {
-    id: 'rotation',
-    label: 'Rotation rate (°/s)',
-    min: -720,
-    max: 720,
-    zero: 0,
-    labelColor: 'rgba(129, 140, 248, 0.85)',
-    background: 'rgba(67, 56, 202, 0.18)',
-    gridColor: 'rgba(129, 140, 248, 0.14)',
-    zeroLine: 'rgba(129, 140, 248, 0.4)',
-  },
-];
 
 const imuPlotter = {
   canvas: imuCombinedChartEl,
@@ -759,64 +483,6 @@ function updateChordModeButton(track) {
 
 function updateOctaveLabel(track) {
   octaveLabel.textContent = `Oct ${track.octave}`;
-}
-
-function formatSeconds(value) {
-  const amount = Number(value);
-  if (Number.isNaN(amount)) {
-    return '0.000s';
-  }
-  if (amount >= 1) {
-    return `${amount.toFixed(2)}s`;
-  }
-  return `${amount.toFixed(3)}s`;
-}
-
-function formatLevel(value) {
-  const amount = Number(value);
-  if (Number.isNaN(amount)) {
-    return '0.00';
-  }
-  return amount.toFixed(2);
-}
-
-function formatFrequency(value) {
-  const amount = Number(value);
-  if (Number.isNaN(amount)) {
-    return '0 Hz';
-  }
-  if (amount >= 1000) {
-    return `${(amount / 1000).toFixed(2)} kHz`;
-  }
-  return `${amount.toFixed(0)} Hz`;
-}
-
-function formatHertz(value) {
-  const amount = Number(value);
-  if (Number.isNaN(amount)) {
-    return '0.00 Hz';
-  }
-  return `${amount.toFixed(2)} Hz`;
-}
-
-function formatPercent(value) {
-  const amount = Number(value);
-  if (Number.isNaN(amount)) {
-    return '0%';
-  }
-  return `${Math.round(amount * 100)}%`;
-}
-
-function formatMilliseconds(value) {
-  const amount = Number(value);
-  if (Number.isNaN(amount)) {
-    return '0 ms';
-  }
-  const ms = amount * 1000;
-  if (ms >= 1000) {
-    return `${(ms / 1000).toFixed(2)} s`;
-  }
-  return `${ms.toFixed(ms < 100 ? 1 : 0)} ms`;
 }
 
 function refreshPresetOptions(selectedValue) {
@@ -1671,13 +1337,6 @@ function updatePlayheads() {
   melodyPlayheadEl.style.left = `${progress * 100}%`;
   drumPlayheadEl.style.left = `${progress * 100}%`;
   state.playheadRaf = requestAnimationFrame(updatePlayheads);
-}
-
-function formatImuValue(value, digits = 2, suffix = '') {
-  if (value == null || Number.isNaN(value)) {
-    return '--';
-  }
-  return `${value.toFixed(digits)}${suffix}`;
 }
 
 function setImuValue(key, text) {
