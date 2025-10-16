@@ -9,26 +9,105 @@ const DRUM_LANES = [
   { id: 'hat', label: 'Hi-Hat' },
 ];
 
+const DEFAULT_SYNTH_CONFIG = {
+  oscillator: { type: 'triangle' },
+  envelope: { attack: 0.01, decay: 0.1, sustain: 0.6, release: 0.3 },
+  filter: { type: 'lowpass', frequency: 1800, q: 0.8 },
+  effects: {
+    chorus: { enabled: false, rate: 1.6, depth: 0.45, mix: 0.35 },
+    delay: { enabled: false, time: 0.24, feedback: 0.32, mix: 0.28 },
+    reverb: { enabled: false, decay: 2.2, preDelay: 0.03, mix: 0.35 },
+  },
+};
+
 const SYNTH_PRESETS = {
   'Bright Keys': {
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.01, decay: 0.1, sustain: 0.6, release: 0.3 },
+    filter: { type: 'highpass', frequency: 420, q: 0.9 },
+    effects: {
+      chorus: { enabled: false, rate: 1.8, depth: 0.4, mix: 0.25 },
+      delay: { enabled: true, time: 0.22, feedback: 0.28, mix: 0.32 },
+      reverb: { enabled: false, decay: 1.8, preDelay: 0.02, mix: 0.22 },
+    },
   },
   'Warm Pad': {
     oscillator: { type: 'sawtooth' },
-    envelope: { attack: 0.3, decay: 0.2, sustain: 0.8, release: 1.6 },
+    envelope: { attack: 0.4, decay: 0.3, sustain: 0.85, release: 2.4 },
+    filter: { type: 'lowpass', frequency: 1500, q: 0.7 },
+    effects: {
+      chorus: { enabled: true, rate: 0.7, depth: 0.55, mix: 0.45 },
+      delay: { enabled: false, time: 0.3, feedback: 0.2, mix: 0.15 },
+      reverb: { enabled: true, decay: 4.5, preDelay: 0.05, mix: 0.48 },
+    },
   },
   'Soft Lead': {
     oscillator: { type: 'square' },
     envelope: { attack: 0.02, decay: 0.15, sustain: 0.5, release: 0.5 },
+    filter: { type: 'lowpass', frequency: 2600, q: 1.1 },
+    effects: {
+      chorus: { enabled: false, rate: 1.2, depth: 0.3, mix: 0.2 },
+      delay: { enabled: true, time: 0.32, feedback: 0.42, mix: 0.4 },
+      reverb: { enabled: true, decay: 2.8, preDelay: 0.04, mix: 0.3 },
+    },
   },
   'Airy Pluck': {
     oscillator: { type: 'sine' },
     envelope: { attack: 0.005, decay: 0.2, sustain: 0.25, release: 0.4 },
+    filter: { type: 'bandpass', frequency: 1800, q: 2.4 },
+    effects: {
+      chorus: { enabled: true, rate: 2.2, depth: 0.65, mix: 0.38 },
+      delay: { enabled: true, time: 0.28, feedback: 0.36, mix: 0.35 },
+      reverb: { enabled: true, decay: 3.5, preDelay: 0.06, mix: 0.5 },
+    },
   },
 };
 
 const DEFAULT_SYNTH_PRESET = 'Bright Keys';
+
+const OSCILLATOR_TYPES = ['sine', 'triangle', 'sawtooth', 'square'];
+
+const FILTER_TYPES = [
+  { value: 'lowpass', label: 'Low-pass' },
+  { value: 'highpass', label: 'High-pass' },
+  { value: 'bandpass', label: 'Band-pass' },
+];
+
+const ENVELOPE_CONTROL_LIMITS = {
+  attack: { min: 0, max: 2, step: 0.005 },
+  decay: { min: 0, max: 2, step: 0.01 },
+  sustain: { min: 0, max: 1, step: 0.01 },
+  release: { min: 0, max: 4, step: 0.01 },
+};
+
+const FILTER_CONTROL_LIMITS = {
+  frequency: { min: 80, max: 12000, step: 1 },
+  q: { min: 0.1, max: 18, step: 0.1 },
+};
+
+const EFFECT_CONTROL_LIMITS = {
+  chorus: {
+    rate: { min: 0.1, max: 8, step: 0.1 },
+    depth: { min: 0, max: 1, step: 0.01 },
+    mix: { min: 0, max: 1, step: 0.01 },
+  },
+  delay: {
+    time: { min: 0, max: 0.8, step: 0.01 },
+    feedback: { min: 0, max: 0.95, step: 0.01 },
+    mix: { min: 0, max: 1, step: 0.01 },
+  },
+  reverb: {
+    decay: { min: 0.2, max: 8, step: 0.1 },
+    preDelay: { min: 0, max: 0.2, step: 0.005 },
+    mix: { min: 0, max: 1, step: 0.01 },
+  },
+};
+
+const EFFECT_LABELS = {
+  chorus: 'Chorus',
+  delay: 'Delay',
+  reverb: 'Reverb',
+};
 
 const state = {
   bpm: 100,
@@ -40,6 +119,7 @@ const state = {
   playheadRaf: null,
   tracks: [],
   activeTrackId: null,
+  customPresets: [],
 };
 
 const masterVolume = new Tone.Volume(-8).toDestination();
@@ -98,6 +178,63 @@ const synthPanelEl = document.getElementById('synthPanel');
 const drumPanelEl = document.getElementById('drumPanel');
 const synthTitleEl = document.getElementById('synthTitle');
 const drumTitleEl = document.getElementById('drumTitle');
+const synthStatusEl = document.getElementById('synthStatus');
+const oscillatorSelect = document.getElementById('oscillatorType');
+const filterTypeSelect = document.getElementById('filterType');
+const filterInputs = {
+  frequency: document.getElementById('filterFrequency'),
+  q: document.getElementById('filterQ'),
+};
+const filterValueEls = {
+  frequency: document.getElementById('filterFrequencyValue'),
+  q: document.getElementById('filterQValue'),
+};
+const envelopeInputs = {
+  attack: document.getElementById('envelopeAttack'),
+  decay: document.getElementById('envelopeDecay'),
+  sustain: document.getElementById('envelopeSustain'),
+  release: document.getElementById('envelopeRelease'),
+};
+const envelopeValueEls = {
+  attack: document.getElementById('envelopeAttackValue'),
+  decay: document.getElementById('envelopeDecayValue'),
+  sustain: document.getElementById('envelopeSustainValue'),
+  release: document.getElementById('envelopeReleaseValue'),
+};
+const customPresetNameInput = document.getElementById('customPresetName');
+const saveCustomPresetBtn = document.getElementById('saveCustomPreset');
+const effectControlElements = {
+  chorus: {
+    container: document.getElementById('chorusControls'),
+    enabled: document.getElementById('chorusEnabled'),
+    rateInput: document.getElementById('chorusRate'),
+    rateValue: document.getElementById('chorusRateValue'),
+    depthInput: document.getElementById('chorusDepth'),
+    depthValue: document.getElementById('chorusDepthValue'),
+    mixInput: document.getElementById('chorusMix'),
+    mixValue: document.getElementById('chorusMixValue'),
+  },
+  delay: {
+    container: document.getElementById('delayControls'),
+    enabled: document.getElementById('delayEnabled'),
+    timeInput: document.getElementById('delayTime'),
+    timeValue: document.getElementById('delayTimeValue'),
+    feedbackInput: document.getElementById('delayFeedback'),
+    feedbackValue: document.getElementById('delayFeedbackValue'),
+    mixInput: document.getElementById('delayMix'),
+    mixValue: document.getElementById('delayMixValue'),
+  },
+  reverb: {
+    container: document.getElementById('reverbControls'),
+    enabled: document.getElementById('reverbEnabled'),
+    decayInput: document.getElementById('reverbDecay'),
+    decayValue: document.getElementById('reverbDecayValue'),
+    preDelayInput: document.getElementById('reverbPreDelay'),
+    preDelayValue: document.getElementById('reverbPreDelayValue'),
+    mixInput: document.getElementById('reverbMix'),
+    mixValue: document.getElementById('reverbMixValue'),
+  },
+};
 const imuToggleBtn = document.getElementById('imuToggle');
 const imuStatusEl = document.getElementById('imuStatus');
 const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).reduce(
@@ -184,14 +321,131 @@ function getSynthTracks() {
   return state.tracks.filter((track) => track.type === 'synth');
 }
 
-function createSynthTrack(name, preset = DEFAULT_SYNTH_PRESET) {
+function cloneSynthConfig(config) {
+  const source = config || DEFAULT_SYNTH_CONFIG;
+  return {
+    oscillator: {
+      type: source?.oscillator?.type || DEFAULT_SYNTH_CONFIG.oscillator.type,
+    },
+    envelope: {
+      attack: source?.envelope?.attack ?? DEFAULT_SYNTH_CONFIG.envelope.attack,
+      decay: source?.envelope?.decay ?? DEFAULT_SYNTH_CONFIG.envelope.decay,
+      sustain: source?.envelope?.sustain ?? DEFAULT_SYNTH_CONFIG.envelope.sustain,
+      release: source?.envelope?.release ?? DEFAULT_SYNTH_CONFIG.envelope.release,
+    },
+    filter: {
+      type: source?.filter?.type || DEFAULT_SYNTH_CONFIG.filter.type,
+      frequency: source?.filter?.frequency ?? DEFAULT_SYNTH_CONFIG.filter.frequency,
+      q: source?.filter?.q ?? DEFAULT_SYNTH_CONFIG.filter.q,
+    },
+    effects: {
+      chorus: {
+        enabled: source?.effects?.chorus?.enabled ?? DEFAULT_SYNTH_CONFIG.effects.chorus.enabled,
+        rate: source?.effects?.chorus?.rate ?? DEFAULT_SYNTH_CONFIG.effects.chorus.rate,
+        depth: source?.effects?.chorus?.depth ?? DEFAULT_SYNTH_CONFIG.effects.chorus.depth,
+        mix: source?.effects?.chorus?.mix ?? DEFAULT_SYNTH_CONFIG.effects.chorus.mix,
+      },
+      delay: {
+        enabled: source?.effects?.delay?.enabled ?? DEFAULT_SYNTH_CONFIG.effects.delay.enabled,
+        time: source?.effects?.delay?.time ?? DEFAULT_SYNTH_CONFIG.effects.delay.time,
+        feedback: source?.effects?.delay?.feedback ?? DEFAULT_SYNTH_CONFIG.effects.delay.feedback,
+        mix: source?.effects?.delay?.mix ?? DEFAULT_SYNTH_CONFIG.effects.delay.mix,
+      },
+      reverb: {
+        enabled: source?.effects?.reverb?.enabled ?? DEFAULT_SYNTH_CONFIG.effects.reverb.enabled,
+        decay: source?.effects?.reverb?.decay ?? DEFAULT_SYNTH_CONFIG.effects.reverb.decay,
+        preDelay:
+          source?.effects?.reverb?.preDelay ?? DEFAULT_SYNTH_CONFIG.effects.reverb.preDelay,
+        mix: source?.effects?.reverb?.mix ?? DEFAULT_SYNTH_CONFIG.effects.reverb.mix,
+      },
+    },
+  };
+}
+
+function getPresetConfigById(presetId) {
+  if (presetId && SYNTH_PRESETS[presetId]) {
+    return SYNTH_PRESETS[presetId];
+  }
+  if (presetId && presetId.startsWith('custom:')) {
+    const custom = state.customPresets.find((preset) => `custom:${preset.id}` === presetId);
+    if (custom) {
+      return custom.config;
+    }
+  }
+  return SYNTH_PRESETS[DEFAULT_SYNTH_PRESET];
+}
+
+function synthConfigsEqual(a, b) {
+  if (!a || !b) return false;
+  const oscillatorMatch = a?.oscillator?.type === b?.oscillator?.type;
+  if (!oscillatorMatch) return false;
+  const envelopeKeys = ['attack', 'decay', 'sustain', 'release'];
+  const approxEqual = (valueA, valueB) => Math.abs(Number(valueA) - Number(valueB)) < 0.0001;
+  const envelopeMatch = envelopeKeys.every((key) =>
+    approxEqual(a?.envelope?.[key], b?.envelope?.[key]),
+  );
+  if (!envelopeMatch) return false;
+  const filterMatch =
+    a?.filter?.type === b?.filter?.type &&
+    approxEqual(a?.filter?.frequency, b?.filter?.frequency) &&
+    approxEqual(a?.filter?.q, b?.filter?.q);
+  if (!filterMatch) return false;
+  const effectKeys = ['chorus', 'delay', 'reverb'];
+  return effectKeys.every((key) => {
+    const effectA = a?.effects?.[key];
+    const effectB = b?.effects?.[key];
+    if (!effectA || !effectB) return false;
+    if (!!effectA.enabled !== !!effectB.enabled) return false;
+    const params = Object.keys(effectA).filter((param) => param !== 'enabled');
+    return params.every((param) => approxEqual(effectA[param], effectB[param]));
+  });
+}
+
+function findMatchingPresetId(config) {
+  const builtInEntry = Object.entries(SYNTH_PRESETS).find(([, presetConfig]) =>
+    synthConfigsEqual(config, presetConfig),
+  );
+  if (builtInEntry) {
+    return builtInEntry[0];
+  }
+  const customEntry = state.customPresets.find((preset) => synthConfigsEqual(config, preset.config));
+  if (customEntry) {
+    return `custom:${customEntry.id}`;
+  }
+  return null;
+}
+
+function getPresetDisplayName(presetId) {
+  if (!presetId) {
+    return 'Custom';
+  }
+  if (SYNTH_PRESETS[presetId]) {
+    return presetId;
+  }
+  if (presetId.startsWith('custom:')) {
+    const custom = state.customPresets.find((preset) => `custom:${preset.id}` === presetId);
+    if (custom) {
+      return custom.name;
+    }
+  }
+  return 'Custom';
+}
+
+function getTrackPresetValue(track) {
+  return track.presetId || '__custom';
+}
+
+function createSynthTrack(name, presetId = DEFAULT_SYNTH_PRESET) {
+  const baseConfig = getPresetConfigById(presetId);
   return {
     id: crypto.randomUUID(),
     type: 'synth',
     name,
     notes: [],
     octave: 4,
-    preset,
+    presetId,
+    sourcePresetId: presetId,
+    synthConfig: cloneSynthConfig(baseConfig),
     chordMode: false,
   };
 }
@@ -209,23 +463,93 @@ function disposeInstrument(trackId) {
   const instrument = trackInstruments.get(trackId);
   if (!instrument) return;
   if (instrument.type === 'synth') {
-    instrument.node.dispose();
+    if (instrument.nodes?.length) {
+      instrument.nodes.forEach((node) => {
+        if (typeof node.dispose === 'function') {
+          node.dispose();
+        }
+      });
+    } else {
+      instrument.node.dispose();
+    }
   } else if (instrument.type === 'drum') {
     Object.values(instrument.nodes).forEach((node) => node.dispose());
   }
   trackInstruments.delete(trackId);
 }
 
+function createSynthInstrument(config) {
+  const nodes = [];
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 16,
+    oscillator: { ...config.oscillator },
+    envelope: { ...config.envelope },
+  });
+  nodes.push(synth);
+  let lastNode = synth;
+
+  const filter = new Tone.Filter({
+    type: config.filter?.type || DEFAULT_SYNTH_CONFIG.filter.type,
+    frequency: config.filter?.frequency ?? DEFAULT_SYNTH_CONFIG.filter.frequency,
+    Q: config.filter?.q ?? DEFAULT_SYNTH_CONFIG.filter.q,
+  });
+  nodes.push(filter);
+  lastNode.connect(filter);
+  lastNode = filter;
+
+  const chorusConfig = config.effects?.chorus;
+  if (chorusConfig?.enabled) {
+    const chorus = new Tone.Chorus({
+      frequency: chorusConfig.rate,
+      depth: chorusConfig.depth,
+      delayTime: 2.5,
+      spread: 180,
+      wet: chorusConfig.mix,
+    }).start();
+    nodes.push(chorus);
+    lastNode.connect(chorus);
+    lastNode = chorus;
+  }
+
+  const delayConfig = config.effects?.delay;
+  if (delayConfig?.enabled) {
+    const delay = new Tone.FeedbackDelay({
+      delayTime: delayConfig.time,
+      feedback: delayConfig.feedback,
+      wet: delayConfig.mix,
+    });
+    nodes.push(delay);
+    lastNode.connect(delay);
+    lastNode = delay;
+  }
+
+  const reverbConfig = config.effects?.reverb;
+  if (reverbConfig?.enabled) {
+    const reverb = new Tone.Reverb({
+      decay: reverbConfig.decay,
+      preDelay: reverbConfig.preDelay,
+      wet: reverbConfig.mix,
+    });
+    nodes.push(reverb);
+    lastNode.connect(reverb);
+    lastNode = reverb;
+  }
+
+  const output = new Tone.Gain(1);
+  nodes.push(output);
+  lastNode.connect(output);
+  output.connect(masterVolume);
+
+  return { synth, nodes };
+}
+
 function ensureInstrumentForTrack(track) {
   if (track.type === 'synth') {
-    const presetConfig = SYNTH_PRESETS[track.preset] || SYNTH_PRESETS[DEFAULT_SYNTH_PRESET];
+    const config = track.synthConfig || cloneSynthConfig(getPresetConfigById(track.presetId));
+    track.synthConfig = cloneSynthConfig(config);
     disposeInstrument(track.id);
-    const synth = new Tone.PolySynth(Tone.Synth, {
-      maxPolyphony: 16,
-      oscillator: { ...presetConfig.oscillator },
-      envelope: { ...presetConfig.envelope },
-    }).connect(masterVolume);
-    trackInstruments.set(track.id, { type: 'synth', node: synth });
+    const { synth, nodes } = createSynthInstrument(track.synthConfig);
+    trackInstruments.set(track.id, { type: 'synth', node: synth, nodes });
   } else if (track.type === 'drum') {
     disposeInstrument(track.id);
     const kit = {
@@ -361,11 +685,261 @@ function updateOctaveLabel(track) {
   octaveLabel.textContent = `Oct ${track.octave}`;
 }
 
+function formatSeconds(value) {
+  const amount = Number(value);
+  if (Number.isNaN(amount)) {
+    return '0.000s';
+  }
+  if (amount >= 1) {
+    return `${amount.toFixed(2)}s`;
+  }
+  return `${amount.toFixed(3)}s`;
+}
+
+function formatLevel(value) {
+  const amount = Number(value);
+  if (Number.isNaN(amount)) {
+    return '0.00';
+  }
+  return amount.toFixed(2);
+}
+
+function formatFrequency(value) {
+  const amount = Number(value);
+  if (Number.isNaN(amount)) {
+    return '0 Hz';
+  }
+  if (amount >= 1000) {
+    return `${(amount / 1000).toFixed(2)} kHz`;
+  }
+  return `${amount.toFixed(0)} Hz`;
+}
+
+function formatHertz(value) {
+  const amount = Number(value);
+  if (Number.isNaN(amount)) {
+    return '0.00 Hz';
+  }
+  return `${amount.toFixed(2)} Hz`;
+}
+
+function formatPercent(value) {
+  const amount = Number(value);
+  if (Number.isNaN(amount)) {
+    return '0%';
+  }
+  return `${Math.round(amount * 100)}%`;
+}
+
+function formatMilliseconds(value) {
+  const amount = Number(value);
+  if (Number.isNaN(amount)) {
+    return '0 ms';
+  }
+  const ms = amount * 1000;
+  if (ms >= 1000) {
+    return `${(ms / 1000).toFixed(2)} s`;
+  }
+  return `${ms.toFixed(ms < 100 ? 1 : 0)} ms`;
+}
+
+function refreshPresetOptions(selectedValue) {
+  if (!presetSelect) return;
+  const currentValue = selectedValue ?? presetSelect.value ?? DEFAULT_SYNTH_PRESET;
+  const fragment = document.createDocumentFragment();
+  Object.keys(SYNTH_PRESETS).forEach((name) => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    fragment.appendChild(option);
+  });
+  if (state.customPresets.length) {
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.value = '';
+    separator.textContent = '────────';
+    fragment.appendChild(separator);
+    state.customPresets.forEach((preset) => {
+      const option = document.createElement('option');
+      option.value = `custom:${preset.id}`;
+      option.textContent = `${preset.name} (Custom)`;
+      fragment.appendChild(option);
+    });
+  }
+  const customOption = document.createElement('option');
+  customOption.value = '__custom';
+  customOption.textContent = 'Custom (unsaved)';
+  fragment.appendChild(customOption);
+  presetSelect.innerHTML = '';
+  presetSelect.appendChild(fragment);
+  const availableValues = Array.from(presetSelect.options).map((option) => option.value);
+  if (!availableValues.includes(currentValue)) {
+    presetSelect.value = DEFAULT_SYNTH_PRESET;
+  } else {
+    presetSelect.value = currentValue;
+  }
+}
+
+function describeActiveEffects(config) {
+  if (!config?.effects) {
+    return 'FX: none';
+  }
+  const activeEffects = Object.entries(config.effects)
+    .filter(([, effectConfig]) => effectConfig.enabled && Number(effectConfig.mix) > 0)
+    .map(([key]) => EFFECT_LABELS[key] || key);
+  if (!activeEffects.length) {
+    return 'FX: none';
+  }
+  return `FX: ${activeEffects.join(' + ')}`;
+}
+
+function updateSynthStatus(track) {
+  if (!synthStatusEl) return;
+  const config = track.synthConfig || cloneSynthConfig(getPresetConfigById(track.presetId));
+  const activeValue = getTrackPresetValue(track);
+  synthStatusEl.classList.toggle('synth-status--custom', activeValue === '__custom');
+  const presetLabel =
+    activeValue === '__custom'
+      ? `Tweaking ${getPresetDisplayName(track.sourcePresetId)}`
+      : `Preset: ${getPresetDisplayName(activeValue)}`;
+  synthStatusEl.textContent = `${presetLabel} • ${describeActiveEffects(config)}`;
+}
+
+function updateEnvelopeControl(param, value) {
+  if (envelopeInputs[param]) {
+    envelopeInputs[param].value = value;
+  }
+  if (envelopeValueEls[param]) {
+    const formatter = param === 'sustain' ? formatLevel : formatSeconds;
+    envelopeValueEls[param].textContent = formatter(value);
+  }
+}
+
+function updateFilterControl(param, value) {
+  if (filterInputs[param]) {
+    filterInputs[param].value = value;
+  }
+  if (filterValueEls[param]) {
+    const formatter = param === 'frequency' ? formatFrequency : formatLevel;
+    filterValueEls[param].textContent = formatter(value);
+  }
+}
+
+function getEffectControl(effectKey) {
+  return effectControlElements[effectKey] || null;
+}
+
+function updateEffectControls(effectKey, effectConfig) {
+  const controls = getEffectControl(effectKey);
+  if (!controls || !effectConfig) return;
+  if (controls.enabled) {
+    controls.enabled.checked = !!effectConfig.enabled;
+  }
+  const isActive = !!effectConfig.enabled && Number(effectConfig.mix) > 0;
+  if (controls.container) {
+    controls.container.classList.toggle('synth-effects__group--active', isActive);
+    controls.container.classList.toggle('synth-effects__group--disabled', !isActive);
+  }
+  const disableParams = !effectConfig.enabled;
+  const assignValue = (key, formatter) => {
+    const inputKey = `${key}Input`;
+    const valueKey = `${key}Value`;
+    const input = controls[inputKey];
+    if (input) {
+      input.value = effectConfig[key];
+      input.disabled = disableParams;
+    }
+    const valueEl = controls[valueKey];
+    if (valueEl) {
+      valueEl.textContent = formatter(effectConfig[key]);
+    }
+  };
+
+  if ('rate' in effectConfig) assignValue('rate', formatHertz);
+  if ('depth' in effectConfig) assignValue('depth', formatPercent);
+  if ('time' in effectConfig) assignValue('time', formatSeconds);
+  if ('feedback' in effectConfig) assignValue('feedback', formatPercent);
+  if ('decay' in effectConfig) assignValue('decay', formatSeconds);
+  if ('preDelay' in effectConfig) assignValue('preDelay', formatMilliseconds);
+  if ('mix' in effectConfig) assignValue('mix', formatPercent);
+}
+
+function updateSynthEditorControls(track) {
+  const config = track.synthConfig || cloneSynthConfig(getPresetConfigById(track.presetId));
+  if (oscillatorSelect) {
+    oscillatorSelect.value = config.oscillator.type;
+  }
+  if (filterTypeSelect && config.filter?.type) {
+    filterTypeSelect.value = config.filter.type;
+  }
+  Object.entries(config.envelope).forEach(([param, value]) => {
+    updateEnvelopeControl(param, value);
+  });
+  if (config.filter) {
+    updateFilterControl('frequency', config.filter.frequency);
+    updateFilterControl('q', config.filter.q);
+  }
+  if (config.effects) {
+    Object.entries(config.effects).forEach(([effectKey, effectConfig]) => {
+      updateEffectControls(effectKey, effectConfig);
+    });
+  }
+  const selectedValue = getTrackPresetValue(track);
+  if (!Array.from(presetSelect.options).some((option) => option.value === selectedValue)) {
+    refreshPresetOptions(selectedValue);
+  } else {
+    presetSelect.value = selectedValue;
+  }
+  updateSynthStatus(track);
+}
+
+function commitSynthConfigUpdate(track, updater) {
+  if (!track || track.type !== 'synth') return;
+  if (!track.synthConfig) {
+    track.synthConfig = cloneSynthConfig(getPresetConfigById(track.presetId));
+  }
+  updater(track.synthConfig);
+  const matchedPreset = findMatchingPresetId(track.synthConfig);
+  if (matchedPreset) {
+    track.presetId = matchedPreset;
+    track.sourcePresetId = matchedPreset;
+  } else {
+    track.presetId = null;
+  }
+  ensureInstrumentForTrack(track);
+  updateSynthEditorControls(track);
+}
+
+function saveCurrentSynthAsPreset() {
+  const track = getActiveTrack();
+  if (!track || track.type !== 'synth') return;
+  if (!customPresetNameInput) return;
+  const name = customPresetNameInput.value.trim();
+  if (!name) {
+    customPresetNameInput.focus();
+    return;
+  }
+  const config = cloneSynthConfig(track.synthConfig || getPresetConfigById(track.presetId));
+  const id = crypto.randomUUID();
+  state.customPresets.push({ id, name, config });
+  track.presetId = `custom:${id}`;
+  track.sourcePresetId = track.presetId;
+  track.synthConfig = cloneSynthConfig(config);
+  refreshPresetOptions(track.presetId);
+  updateSynthEditorControls(track);
+  ensureInstrumentForTrack(track);
+  customPresetNameInput.value = '';
+}
+
 function renderSynthPanel(track) {
   synthTitleEl.textContent = track.name;
   updateChordModeButton(track);
   updateOctaveLabel(track);
-  presetSelect.value = track.preset;
+  refreshPresetOptions(getTrackPresetValue(track));
+  updateSynthEditorControls(track);
+  if (customPresetNameInput) {
+    customPresetNameInput.value = '';
+  }
   renderSynthLanes(track);
   renderMelodyTicks();
 }
@@ -1444,12 +2018,67 @@ function toggleChordMode() {
 }
 
 function populatePresetOptions() {
-  presetSelect.innerHTML = '';
-  Object.keys(SYNTH_PRESETS).forEach((name) => {
+  refreshPresetOptions(presetSelect.value || DEFAULT_SYNTH_PRESET);
+}
+
+function populateOscillatorOptions() {
+  if (!oscillatorSelect) return;
+  oscillatorSelect.innerHTML = '';
+  OSCILLATOR_TYPES.forEach((type) => {
     const option = document.createElement('option');
-    option.value = name;
-    option.textContent = name;
-    presetSelect.appendChild(option);
+    option.value = type;
+    option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+    oscillatorSelect.appendChild(option);
+  });
+}
+
+function populateFilterOptions() {
+  if (!filterTypeSelect) return;
+  filterTypeSelect.innerHTML = '';
+  FILTER_TYPES.forEach((filter) => {
+    const option = document.createElement('option');
+    option.value = filter.value;
+    option.textContent = filter.label;
+    filterTypeSelect.appendChild(option);
+  });
+}
+
+function configureEnvelopeInputs() {
+  Object.entries(envelopeInputs).forEach(([param, input]) => {
+    if (!input) return;
+    const limits = ENVELOPE_CONTROL_LIMITS[param];
+    if (limits) {
+      input.min = limits.min;
+      input.max = limits.max;
+      input.step = limits.step;
+    }
+  });
+}
+
+function configureFilterInputs() {
+  Object.entries(filterInputs).forEach(([param, input]) => {
+    if (!input) return;
+    const limits = FILTER_CONTROL_LIMITS[param];
+    if (limits) {
+      input.min = limits.min;
+      input.max = limits.max;
+      input.step = limits.step;
+    }
+  });
+}
+
+function configureEffectInputs() {
+  Object.entries(effectControlElements).forEach(([effectKey, controls]) => {
+    const limits = EFFECT_CONTROL_LIMITS[effectKey];
+    if (!limits) return;
+    Object.entries(limits).forEach(([param, config]) => {
+      const input = controls?.[`${param}Input`];
+      if (input && config) {
+        input.min = config.min;
+        input.max = config.max;
+        input.step = config.step;
+      }
+    });
   });
 }
 
@@ -1520,10 +2149,114 @@ function initControls() {
   presetSelect.addEventListener('change', (event) => {
     const track = getActiveTrack();
     if (!track || track.type !== 'synth') return;
-    track.preset = event.target.value;
+    const value = event.target.value;
+    if (value === '__custom') {
+      presetSelect.value = getTrackPresetValue(track);
+      return;
+    }
+    const config = cloneSynthConfig(getPresetConfigById(value));
+    track.presetId = value;
+    track.sourcePresetId = value;
+    track.synthConfig = cloneSynthConfig(config);
     ensureInstrumentForTrack(track);
+    updateSynthEditorControls(track);
     rebuildSequences();
   });
+
+  if (oscillatorSelect) {
+    oscillatorSelect.addEventListener('change', (event) => {
+      const track = getActiveTrack();
+      if (!track || track.type !== 'synth') return;
+      const type = event.target.value;
+      commitSynthConfigUpdate(track, (config) => {
+        config.oscillator.type = type;
+      });
+    });
+  }
+
+  if (filterTypeSelect) {
+    filterTypeSelect.addEventListener('change', (event) => {
+      const track = getActiveTrack();
+      if (!track || track.type !== 'synth') return;
+      const value = event.target.value;
+      commitSynthConfigUpdate(track, (config) => {
+        config.filter.type = value;
+      });
+    });
+  }
+
+  Object.entries(filterInputs).forEach(([param, input]) => {
+    if (!input) return;
+    input.addEventListener('input', (event) => {
+      const track = getActiveTrack();
+      if (!track || track.type !== 'synth') return;
+      const value = Number(event.target.value);
+      commitSynthConfigUpdate(track, (config) => {
+        config.filter[param] = value;
+      });
+    });
+  });
+
+  Object.entries(envelopeInputs).forEach(([param, input]) => {
+    if (!input) return;
+    input.addEventListener('input', (event) => {
+      const track = getActiveTrack();
+      if (!track || track.type !== 'synth') return;
+      const value = Number(event.target.value);
+      commitSynthConfigUpdate(track, (config) => {
+        config.envelope[param] = value;
+      });
+    });
+  });
+
+  Object.entries(effectControlElements).forEach(([effectKey, controls]) => {
+    if (controls.enabled) {
+      controls.enabled.addEventListener('change', (event) => {
+        const track = getActiveTrack();
+        if (!track || track.type !== 'synth') return;
+        const enabled = event.target.checked;
+        commitSynthConfigUpdate(track, (config) => {
+          const effectConfig = config.effects[effectKey];
+          if (!effectConfig) return;
+          effectConfig.enabled = enabled;
+          if (enabled && effectConfig.mix <= 0) {
+            effectConfig.mix =
+              DEFAULT_SYNTH_CONFIG.effects?.[effectKey]?.mix ?? 0.35;
+          }
+        });
+      });
+    }
+
+    ['rate', 'depth', 'time', 'feedback', 'decay', 'preDelay', 'mix'].forEach((param) => {
+      const input = controls?.[`${param}Input`];
+      if (!input) return;
+      input.addEventListener('input', (event) => {
+        const track = getActiveTrack();
+        if (!track || track.type !== 'synth') return;
+        const value = Number(event.target.value);
+        commitSynthConfigUpdate(track, (config) => {
+          const effectConfig = config.effects[effectKey];
+          if (!effectConfig) return;
+          if (Number.isFinite(value)) {
+            effectConfig[param] = value;
+          }
+        });
+      });
+    });
+  });
+
+  if (saveCustomPresetBtn) {
+    saveCustomPresetBtn.addEventListener('click', saveCurrentSynthAsPreset);
+  }
+
+  if (customPresetNameInput) {
+    customPresetNameInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        saveCurrentSynthAsPreset();
+      }
+    });
+  }
 
   addSynthTrackBtn.addEventListener('click', addSynthTrack);
   addDrumTrackBtn.addEventListener('click', addDrumTrack);
@@ -1531,6 +2264,11 @@ function initControls() {
 
 function init() {
   populatePresetOptions();
+  populateOscillatorOptions();
+  populateFilterOptions();
+  configureEnvelopeInputs();
+  configureFilterInputs();
+  configureEffectInputs();
   bpmValue.textContent = `${state.bpm}`;
   gridSelect.value = `${state.grid}`;
   scaleSelect.value = state.scale;
