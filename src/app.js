@@ -46,6 +46,21 @@ const masterVolume = new Tone.Volume(-8).toDestination();
 const trackInstruments = new Map();
 const trackParts = new Map();
 const pointerInteractions = new Map();
+const imuState = {
+  active: false,
+  samples: 0,
+  stats: { accelerationPeak: 0, rotationPeak: 0 },
+  intervalSum: 0,
+  intervalCount: 0,
+  data: {
+    acc: { x: 0, y: 0, z: 0, magnitude: 0 },
+    accG: { x: 0, y: 0, z: 0, magnitude: 0 },
+    rotation: { alpha: 0, beta: 0, gamma: 0, magnitude: 0 },
+    orientation: { alpha: null, beta: null, gamma: null, absolute: false },
+    interval: null,
+    lastTimestamp: null,
+  },
+};
 
 const melodyGridEl = document.getElementById('melodyGrid');
 const melodyLanesEl = document.getElementById('melodyLanes');
@@ -77,6 +92,15 @@ const synthPanelEl = document.getElementById('synthPanel');
 const drumPanelEl = document.getElementById('drumPanel');
 const synthTitleEl = document.getElementById('synthTitle');
 const drumTitleEl = document.getElementById('drumTitle');
+const imuToggleBtn = document.getElementById('imuToggle');
+const imuStatusEl = document.getElementById('imuStatus');
+const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).reduce(
+  (map, el) => {
+    map[el.dataset.imu] = el;
+    return map;
+  },
+  {},
+);
 
 function getTotalSlots() {
   return state.bars * state.grid;
@@ -328,8 +352,9 @@ function renderSynthNotes(track) {
     const laneEl = lanes[laneInfoIndex];
     if (!laneEl) return;
     const block = document.createElement('div');
-    block.className = 'note-block';
+    block.classList.add('note-block', 'melody-note');
     block.dataset.id = note.id;
+    block.dataset.groupId = getNoteGroupId(note);
     block.dataset.type = 'melody';
     block.dataset.trackId = track.id;
     block.textContent = laneData[laneInfoIndex].name;
@@ -346,7 +371,6 @@ function renderSynthNotes(track) {
     block.addEventListener('pointermove', handleMelodyBlockPointerMove);
     block.addEventListener('pointerup', endBlockInteraction);
     block.addEventListener('pointercancel', endBlockInteraction);
-    block.addEventListener('dblclick', () => deleteMelodyNote(note.id, track.id));
 
     handle.addEventListener('pointerdown', (event) => startMelodyResize(event, note));
     handle.addEventListener('pointermove', handleMelodyResizeMove);
@@ -412,7 +436,6 @@ function renderDrumNotes(track) {
     block.addEventListener('pointermove', handleDrumBlockPointerMove);
     block.addEventListener('pointerup', endBlockInteraction);
     block.addEventListener('pointercancel', endBlockInteraction);
-    block.addEventListener('dblclick', () => deleteDrumNote(note.id, track.id));
 
     handle.addEventListener('pointerdown', (event) => startDrumResize(event, note));
     handle.addEventListener('pointermove', handleDrumResizeMove);
@@ -433,16 +456,47 @@ function createNotesForLane(track, laneIndex, slot) {
   const intervals = SCALE_INTERVALS[state.scale] || SCALE_INTERVALS.Major;
   const maxIndex = Math.max(0, intervals.length - 1);
   const indices = track.chordMode ? [laneIndex, laneIndex + 2, laneIndex + 4] : [laneIndex];
+  const groupId = crypto.randomUUID();
   return indices
     .filter((index) => index >= 0 && index <= maxIndex)
     .map((index) => ({
       id: crypto.randomUUID(),
+      groupId,
       trackId: track.id,
       laneIndex: index,
       octave: track.octave,
       slot,
       len: 1,
     }));
+}
+
+function getNoteGroupId(note) {
+  return note.groupId || note.id;
+}
+
+function findMelodyGroupAtSlot(track, laneIndex, slot) {
+  const existing = track.notes.find(
+    (note) =>
+      note.laneIndex === laneIndex &&
+      slot >= note.slot &&
+      slot < note.slot + note.len,
+  );
+  return existing ? getNoteGroupId(existing) : null;
+}
+
+function removeMelodyGroup(track, groupId) {
+  track.notes = track.notes.filter((note) => getNoteGroupId(note) !== groupId);
+  renderSynthNotes(track);
+  rebuildSequences();
+}
+
+function findDrumNoteAtSlot(track, lane, slot) {
+  return track.notes.find(
+    (note) =>
+      note.lane === lane &&
+      slot >= note.slot &&
+      slot < note.slot + note.len,
+  );
 }
 
 function handleMelodyLanePointerDown(event) {
@@ -452,8 +506,13 @@ function handleMelodyLanePointerDown(event) {
   const pointerId = event.pointerId;
   const totalSlots = getTotalSlots();
   if (!totalSlots) return;
-  event.currentTarget.setPointerCapture(pointerId);
   const startBoundary = Math.min(totalSlots - 1, getBoundaryFromEvent(event, melodyGridEl));
+  const existingGroupId = findMelodyGroupAtSlot(track, laneIndex, startBoundary);
+  if (existingGroupId) {
+    removeMelodyGroup(track, existingGroupId);
+    return;
+  }
+  event.currentTarget.setPointerCapture(pointerId);
   const notes = createNotesForLane(track, laneIndex, startBoundary);
   if (!notes.length) return;
   notes.forEach((note) => track.notes.push(note));
@@ -487,8 +546,13 @@ function handleDrumLanePointerDown(event) {
   const pointerId = event.pointerId;
   const totalSlots = getTotalSlots();
   if (!totalSlots) return;
-  event.currentTarget.setPointerCapture(pointerId);
   const startBoundary = Math.min(totalSlots - 1, getBoundaryFromEvent(event, drumGridEl));
+  const existing = findDrumNoteAtSlot(track, lane, startBoundary);
+  if (existing) {
+    deleteDrumNote(existing.id, track.id);
+    return;
+  }
+  event.currentTarget.setPointerCapture(pointerId);
   const note = {
     id: crypto.randomUUID(),
     trackId: track.id,
@@ -578,6 +642,7 @@ function startMelodyDrag(event, note) {
     note,
     offset: pointerSlot - note.slot,
     trackId: note.trackId,
+    hasMoved: false,
   });
   event.currentTarget.setPointerCapture(pointerId);
 }
@@ -585,6 +650,7 @@ function startMelodyDrag(event, note) {
 function handleMelodyBlockPointerMove(event) {
   const interaction = pointerInteractions.get(event.pointerId);
   if (!interaction || interaction.type !== 'melody-drag') return;
+  interaction.hasMoved = true;
   const track = getTrackById(interaction.trackId);
   if (!track) return;
   const totalSlots = getTotalSlots();
@@ -604,6 +670,7 @@ function startMelodyResize(event, note) {
     type: 'melody-resize',
     note,
     trackId: note.trackId,
+    hasMoved: false,
   });
   event.target.setPointerCapture(pointerId);
 }
@@ -611,6 +678,7 @@ function startMelodyResize(event, note) {
 function handleMelodyResizeMove(event) {
   const interaction = pointerInteractions.get(event.pointerId);
   if (!interaction || interaction.type !== 'melody-resize') return;
+  interaction.hasMoved = true;
   const track = getTrackById(interaction.trackId);
   if (!track) return;
   const totalSlots = getTotalSlots();
@@ -633,6 +701,7 @@ function startDrumDrag(event, note) {
     note,
     offset: pointerSlot - note.slot,
     trackId: note.trackId,
+    hasMoved: false,
   });
   event.currentTarget.setPointerCapture(pointerId);
 }
@@ -640,6 +709,7 @@ function startDrumDrag(event, note) {
 function handleDrumBlockPointerMove(event) {
   const interaction = pointerInteractions.get(event.pointerId);
   if (!interaction || interaction.type !== 'drum-drag') return;
+  interaction.hasMoved = true;
   const track = getTrackById(interaction.trackId);
   if (!track) return;
   const totalSlots = getTotalSlots();
@@ -659,6 +729,7 @@ function startDrumResize(event, note) {
     type: 'drum-resize',
     note,
     trackId: note.trackId,
+    hasMoved: false,
   });
   event.target.setPointerCapture(pointerId);
 }
@@ -666,6 +737,7 @@ function startDrumResize(event, note) {
 function handleDrumResizeMove(event) {
   const interaction = pointerInteractions.get(event.pointerId);
   if (!interaction || interaction.type !== 'drum-resize') return;
+  interaction.hasMoved = true;
   const track = getTrackById(interaction.trackId);
   if (!track) return;
   const totalSlots = getTotalSlots();
@@ -686,9 +758,27 @@ function endBlockInteraction(event) {
   }
   const interaction = pointerInteractions.get(pointerId);
   if (!interaction) return;
-  pointerInteractions.delete(pointerId);
   const track = getTrackById(interaction.trackId);
   if (!track) return;
+  const isCancel = event.type === 'pointercancel';
+  const isNoteBlock = target.classList.contains('note-block');
+  const shouldDelete =
+    !isCancel &&
+    isNoteBlock &&
+    !interaction.hasMoved &&
+    (interaction.type === 'melody-drag' || interaction.type === 'drum-drag');
+
+  pointerInteractions.delete(pointerId);
+
+  if (shouldDelete) {
+    if (interaction.type === 'melody-drag') {
+      deleteMelodyNote(target.dataset.id, track.id);
+    } else {
+      deleteDrumNote(target.dataset.id, track.id);
+    }
+    return;
+  }
+
   if (interaction.type.startsWith('melody')) {
     renderSynthNotes(track);
   } else if (interaction.type.startsWith('drum')) {
@@ -814,6 +904,232 @@ function updatePlayheads() {
   melodyPlayheadEl.style.left = `${progress * 100}%`;
   drumPlayheadEl.style.left = `${progress * 100}%`;
   state.playheadRaf = requestAnimationFrame(updatePlayheads);
+}
+
+function formatImuValue(value, digits = 2, suffix = '') {
+  if (value == null || Number.isNaN(value)) {
+    return '--';
+  }
+  return `${value.toFixed(digits)}${suffix}`;
+}
+
+function updateImuStatus(message) {
+  if (imuStatusEl) {
+    imuStatusEl.textContent = message;
+  }
+}
+
+function renderImuData() {
+  const { acc, accG, rotation, orientation } = imuState.data;
+  const avgInterval = imuState.intervalCount
+    ? imuState.intervalSum / imuState.intervalCount
+    : null;
+
+  if (imuValueEls['acc-x']) imuValueEls['acc-x'].textContent = formatImuValue(acc.x);
+  if (imuValueEls['acc-y']) imuValueEls['acc-y'].textContent = formatImuValue(acc.y);
+  if (imuValueEls['acc-z']) imuValueEls['acc-z'].textContent = formatImuValue(acc.z);
+  if (imuValueEls['acc-mag'])
+    imuValueEls['acc-mag'].textContent = formatImuValue(acc.magnitude);
+  if (imuValueEls['acc-peak'])
+    imuValueEls['acc-peak'].textContent = formatImuValue(
+      imuState.stats.accelerationPeak,
+    );
+
+  if (imuValueEls['accg-x']) imuValueEls['accg-x'].textContent = formatImuValue(accG.x);
+  if (imuValueEls['accg-y']) imuValueEls['accg-y'].textContent = formatImuValue(accG.y);
+  if (imuValueEls['accg-z']) imuValueEls['accg-z'].textContent = formatImuValue(accG.z);
+  if (imuValueEls['accg-mag'])
+    imuValueEls['accg-mag'].textContent = formatImuValue(accG.magnitude);
+
+  if (imuValueEls['rot-alpha'])
+    imuValueEls['rot-alpha'].textContent = formatImuValue(rotation.alpha, 1);
+  if (imuValueEls['rot-beta'])
+    imuValueEls['rot-beta'].textContent = formatImuValue(rotation.beta, 1);
+  if (imuValueEls['rot-gamma'])
+    imuValueEls['rot-gamma'].textContent = formatImuValue(rotation.gamma, 1);
+  if (imuValueEls['rot-peak'])
+    imuValueEls['rot-peak'].textContent = formatImuValue(
+      imuState.stats.rotationPeak,
+      1,
+    );
+
+  if (imuValueEls['ori-alpha'])
+    imuValueEls['ori-alpha'].textContent = formatImuValue(orientation.alpha, 1, '°');
+  if (imuValueEls['ori-beta'])
+    imuValueEls['ori-beta'].textContent = formatImuValue(orientation.beta, 1, '°');
+  if (imuValueEls['ori-gamma'])
+    imuValueEls['ori-gamma'].textContent = formatImuValue(orientation.gamma, 1, '°');
+  if (imuValueEls['ori-absolute']) {
+    const orientationAvailable =
+      orientation.alpha != null || orientation.beta != null || orientation.gamma != null;
+    imuValueEls['ori-absolute'].textContent = orientationAvailable
+      ? orientation.absolute
+        ? 'Yes'
+        : 'No'
+      : '--';
+  }
+
+  if (imuValueEls.samples)
+    imuValueEls.samples.textContent = `${imuState.samples}`;
+  if (imuValueEls.interval) {
+    imuValueEls.interval.textContent =
+      avgInterval == null ? '--' : `${avgInterval.toFixed(0)} ms`;
+  }
+  if (imuValueEls.timestamp) {
+    if (imuState.data.lastTimestamp) {
+      const date = new Date(imuState.data.lastTimestamp);
+      imuValueEls.timestamp.textContent = date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    } else {
+      imuValueEls.timestamp.textContent = '--';
+    }
+  }
+}
+
+async function requestSensorPermission(SensorEvent) {
+  if (!SensorEvent || typeof SensorEvent.requestPermission !== 'function') {
+    return true;
+  }
+  try {
+    const response = await SensorEvent.requestPermission();
+    return response === 'granted';
+  } catch (error) {
+    console.error('Failed to request sensor permission', error);
+    return false;
+  }
+}
+
+async function startImuTracking() {
+  const motionSupported = 'DeviceMotionEvent' in window;
+  const orientationSupported = 'DeviceOrientationEvent' in window;
+  if (!motionSupported && !orientationSupported) {
+    updateImuStatus('IMU sensors are not supported on this device');
+    return;
+  }
+
+  const motionGranted = await requestSensorPermission(window.DeviceMotionEvent);
+  if (!motionGranted) {
+    updateImuStatus('Motion sensor permission denied');
+    return;
+  }
+  const orientationGranted = await requestSensorPermission(window.DeviceOrientationEvent);
+  if (!orientationGranted) {
+    updateImuStatus('Orientation sensor permission denied');
+    return;
+  }
+
+  imuState.active = true;
+  imuState.samples = 0;
+  imuState.stats.accelerationPeak = 0;
+  imuState.stats.rotationPeak = 0;
+  imuState.intervalSum = 0;
+  imuState.intervalCount = 0;
+  imuState.data.acc = { x: 0, y: 0, z: 0, magnitude: 0 };
+  imuState.data.accG = { x: 0, y: 0, z: 0, magnitude: 0 };
+  imuState.data.rotation = { alpha: 0, beta: 0, gamma: 0, magnitude: 0 };
+  imuState.data.orientation = { alpha: null, beta: null, gamma: null, absolute: false };
+  imuState.data.interval = null;
+  imuState.data.lastTimestamp = null;
+  updateImuStatus('Waiting for motion data…');
+  renderImuData();
+
+  window.addEventListener('devicemotion', handleDeviceMotion);
+  window.addEventListener('deviceorientation', handleDeviceOrientation);
+  if (imuToggleBtn) {
+    imuToggleBtn.textContent = 'Stop Tracking';
+    imuToggleBtn.setAttribute('aria-pressed', 'true');
+  }
+}
+
+function stopImuTracking() {
+  if (!imuState.active) return;
+  imuState.active = false;
+  window.removeEventListener('devicemotion', handleDeviceMotion);
+  window.removeEventListener('deviceorientation', handleDeviceOrientation);
+  updateImuStatus('Tracking paused');
+  if (imuToggleBtn) {
+    imuToggleBtn.textContent = 'Start Tracking';
+    imuToggleBtn.setAttribute('aria-pressed', 'false');
+  }
+}
+
+async function toggleImuTracking() {
+  if (imuState.active) {
+    stopImuTracking();
+  } else {
+    await startImuTracking();
+  }
+}
+
+function handleDeviceMotion(event) {
+  if (!imuState.active) return;
+  const accel = event.acceleration || {};
+  const accelG = event.accelerationIncludingGravity || {};
+  const rotationRate = event.rotationRate || {};
+
+  const ax = typeof accel.x === 'number' ? accel.x : 0;
+  const ay = typeof accel.y === 'number' ? accel.y : 0;
+  const az = typeof accel.z === 'number' ? accel.z : 0;
+  const gx = typeof accelG.x === 'number' ? accelG.x : 0;
+  const gy = typeof accelG.y === 'number' ? accelG.y : 0;
+  const gz = typeof accelG.z === 'number' ? accelG.z : 0;
+  const ra = typeof rotationRate.alpha === 'number' ? rotationRate.alpha : 0;
+  const rb = typeof rotationRate.beta === 'number' ? rotationRate.beta : 0;
+  const rg = typeof rotationRate.gamma === 'number' ? rotationRate.gamma : 0;
+
+  const accelMagnitude = Math.sqrt(ax * ax + ay * ay + az * az);
+  const gravityMagnitude = Math.sqrt(gx * gx + gy * gy + gz * gz);
+  const rotationMagnitude = Math.sqrt(ra * ra + rb * rb + rg * rg);
+
+  imuState.data.acc = { x: ax, y: ay, z: az, magnitude: accelMagnitude };
+  imuState.data.accG = { x: gx, y: gy, z: gz, magnitude: gravityMagnitude };
+  imuState.data.rotation = { alpha: ra, beta: rb, gamma: rg, magnitude: rotationMagnitude };
+
+  imuState.samples += 1;
+  imuState.stats.accelerationPeak = Math.max(imuState.stats.accelerationPeak, accelMagnitude);
+  imuState.stats.rotationPeak = Math.max(imuState.stats.rotationPeak, rotationMagnitude);
+  if (typeof event.interval === 'number' && !Number.isNaN(event.interval)) {
+    imuState.intervalSum += event.interval;
+    imuState.intervalCount += 1;
+    imuState.data.interval = event.interval;
+  }
+  imuState.data.lastTimestamp = Date.now();
+  if (imuState.samples === 1) {
+    updateImuStatus('Streaming motion data');
+  }
+  renderImuData();
+}
+
+function handleDeviceOrientation(event) {
+  if (!imuState.active) return;
+  const alpha = typeof event.alpha === 'number' ? event.alpha : null;
+  const beta = typeof event.beta === 'number' ? event.beta : null;
+  const gamma = typeof event.gamma === 'number' ? event.gamma : null;
+  imuState.data.orientation = {
+    alpha,
+    beta,
+    gamma,
+    absolute: Boolean(event.absolute),
+  };
+  renderImuData();
+}
+
+function initializeImuPanel() {
+  if (!imuToggleBtn || !imuStatusEl) return;
+  const supported = 'DeviceMotionEvent' in window || 'DeviceOrientationEvent' in window;
+  if (!supported) {
+    imuToggleBtn.disabled = true;
+    imuToggleBtn.setAttribute('aria-pressed', 'false');
+    updateImuStatus('IMU sensors are not available in this browser');
+    return;
+  }
+  imuToggleBtn.addEventListener('click', toggleImuTracking);
+  imuToggleBtn.setAttribute('aria-pressed', 'false');
+  updateImuStatus('Awaiting permission');
+  renderImuData();
 }
 
 function scaleNotesForGridChange(oldGrid, newGrid) {
@@ -948,6 +1264,7 @@ function init() {
   renderTrackTabs();
   renderActiveTrack();
   initControls();
+  initializeImuPanel();
 }
 
 init();
