@@ -9,21 +9,42 @@ const DRUM_LANES = [
   { id: 'hat', label: 'Hi-Hat' },
 ];
 
+const SYNTH_PRESETS = {
+  'Bright Keys': {
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.01, decay: 0.1, sustain: 0.6, release: 0.3 },
+  },
+  'Warm Pad': {
+    oscillator: { type: 'sawtooth' },
+    envelope: { attack: 0.3, decay: 0.2, sustain: 0.8, release: 1.6 },
+  },
+  'Soft Lead': {
+    oscillator: { type: 'square' },
+    envelope: { attack: 0.02, decay: 0.15, sustain: 0.5, release: 0.5 },
+  },
+  'Airy Pluck': {
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.005, decay: 0.2, sustain: 0.25, release: 0.4 },
+  },
+};
+
+const DEFAULT_SYNTH_PRESET = 'Bright Keys';
+
 const state = {
   bpm: 100,
   bars: 1,
   grid: 8,
   root: 'C',
   scale: 'Major',
-  visibleOctave: 4,
-  melodyNotes: [],
-  drumNotes: [],
   playing: false,
-  melodyPart: null,
-  drumPart: null,
   playheadRaf: null,
+  tracks: [],
+  activeTrackId: null,
 };
 
+const masterVolume = new Tone.Volume(-8).toDestination();
+const trackInstruments = new Map();
+const trackParts = new Map();
 const pointerInteractions = new Map();
 
 const melodyGridEl = document.getElementById('melodyGrid');
@@ -47,28 +68,15 @@ const masterVolumeInput = document.getElementById('masterVolume');
 const octaveLabel = document.getElementById('octaveLabel');
 const octaveUpBtn = document.getElementById('octaveUp');
 const octaveDownBtn = document.getElementById('octaveDown');
-
-const masterVolume = new Tone.Volume(-8).toDestination();
-const melodySynth = new Tone.PolySynth(Tone.Synth, {
-  maxPolyphony: 16,
-  oscillator: { type: 'triangle' },
-  envelope: { attack: 0.01, release: 0.2 },
-}).connect(masterVolume);
-
-const drumSynths = {
-  kick: new Tone.MembraneSynth({ envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 } }).connect(masterVolume),
-  snare: new Tone.NoiseSynth({
-    noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.15 },
-  }).connect(masterVolume),
-  hat: new Tone.MetalSynth({
-    frequency: 400,
-    envelope: { attack: 0.001, decay: 0.1, release: 0.05 },
-    harmonicity: 5.1,
-    modulationIndex: 32,
-    resonance: 4000,
-  }).connect(masterVolume),
-};
+const presetSelect = document.getElementById('presetSelect');
+const chordModeBtn = document.getElementById('chordModeBtn');
+const trackTabsEl = document.getElementById('trackTabs');
+const addSynthTrackBtn = document.getElementById('addSynthTrack');
+const addDrumTrackBtn = document.getElementById('addDrumTrack');
+const synthPanelEl = document.getElementById('synthPanel');
+const drumPanelEl = document.getElementById('drumPanel');
+const synthTitleEl = document.getElementById('synthTitle');
+const drumTitleEl = document.getElementById('drumTitle');
 
 function getTotalSlots() {
   return state.bars * state.grid;
@@ -83,9 +91,83 @@ function getLoopDurationSeconds() {
   return Tone.Time(`${state.bars}m`).toSeconds();
 }
 
-function getMelodyLanes() {
+function getTrackById(id) {
+  return state.tracks.find((track) => track.id === id) || null;
+}
+
+function getActiveTrack() {
+  return getTrackById(state.activeTrackId);
+}
+
+function getSynthTracks() {
+  return state.tracks.filter((track) => track.type === 'synth');
+}
+
+function createSynthTrack(name, preset = DEFAULT_SYNTH_PRESET) {
+  return {
+    id: crypto.randomUUID(),
+    type: 'synth',
+    name,
+    notes: [],
+    octave: 4,
+    preset,
+    chordMode: false,
+  };
+}
+
+function createDrumTrack(name) {
+  return {
+    id: crypto.randomUUID(),
+    type: 'drum',
+    name,
+    notes: [],
+  };
+}
+
+function disposeInstrument(trackId) {
+  const instrument = trackInstruments.get(trackId);
+  if (!instrument) return;
+  if (instrument.type === 'synth') {
+    instrument.node.dispose();
+  } else if (instrument.type === 'drum') {
+    Object.values(instrument.nodes).forEach((node) => node.dispose());
+  }
+  trackInstruments.delete(trackId);
+}
+
+function ensureInstrumentForTrack(track) {
+  if (track.type === 'synth') {
+    const presetConfig = SYNTH_PRESETS[track.preset] || SYNTH_PRESETS[DEFAULT_SYNTH_PRESET];
+    disposeInstrument(track.id);
+    const synth = new Tone.PolySynth(Tone.Synth, {
+      maxPolyphony: 16,
+      oscillator: { ...presetConfig.oscillator },
+      envelope: { ...presetConfig.envelope },
+    }).connect(masterVolume);
+    trackInstruments.set(track.id, { type: 'synth', node: synth });
+  } else if (track.type === 'drum') {
+    disposeInstrument(track.id);
+    const kit = {
+      kick: new Tone.MembraneSynth({ envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 } }).connect(masterVolume),
+      snare: new Tone.NoiseSynth({
+        noise: { type: 'white' },
+        envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.15 },
+      }).connect(masterVolume),
+      hat: new Tone.MetalSynth({
+        frequency: 400,
+        envelope: { attack: 0.001, decay: 0.1, release: 0.05 },
+        harmonicity: 5.1,
+        modulationIndex: 32,
+        resonance: 4000,
+      }).connect(masterVolume),
+    };
+    trackInstruments.set(track.id, { type: 'drum', nodes: kit });
+  }
+}
+
+function getMelodyLanes(track) {
   const intervals = SCALE_INTERVALS[state.scale] || SCALE_INTERVALS.Major;
-  const baseMidi = Tone.Frequency(`${state.root}${state.visibleOctave}`).toMidi();
+  const baseMidi = Tone.Frequency(`${state.root}${track.octave}`).toMidi();
   return intervals
     .map((interval, index) => {
       const midi = baseMidi + interval;
@@ -109,87 +191,21 @@ function getMidiForLane(laneIndex, octave) {
 
 function normalizeNotesForGrid() {
   const totalSlots = getTotalSlots();
-  state.melodyNotes.forEach((note) => {
-    note.slot = Math.max(0, Math.min(note.slot, Math.max(0, totalSlots - 1)));
-    note.len = Math.max(1, Math.min(note.len, totalSlots - note.slot));
-  });
-  state.drumNotes.forEach((note) => {
-    note.slot = Math.max(0, Math.min(note.slot, Math.max(0, totalSlots - 1)));
-    note.len = Math.max(1, Math.min(note.len, totalSlots - note.slot));
+  state.tracks.forEach((track) => {
+    track.notes.forEach((note) => {
+      note.slot = Math.max(0, Math.min(note.slot, Math.max(0, totalSlots - 1)));
+      note.len = Math.max(1, Math.min(note.len, totalSlots - note.slot));
+    });
   });
 }
 
 function normalizeMelodyLaneIndices() {
   const intervals = SCALE_INTERVALS[state.scale] || SCALE_INTERVALS.Major;
   const maxIndex = Math.max(0, intervals.length - 1);
-  state.melodyNotes.forEach((note) => {
-    note.laneIndex = Math.max(0, Math.min(note.laneIndex, maxIndex));
-  });
-}
-
-function renderMelodyLanes() {
-  normalizeMelodyLaneIndices();
-  const lanes = getMelodyLanes();
-  melodyLanesEl.innerHTML = '';
-  melodyLanesEl.style.gridTemplateRows = `repeat(${lanes.length}, 1fr)`;
-  lanes.forEach((lane, index) => {
-    const laneEl = document.createElement('div');
-    laneEl.className = 'lane';
-    if (lane.isRoot) {
-      laneEl.classList.add('root');
-    }
-    laneEl.dataset.laneIndex = lane.laneIndex;
-    const label = document.createElement('strong');
-    label.textContent = lane.name;
-    laneEl.appendChild(label);
-    laneEl.addEventListener('pointerdown', handleMelodyLanePointerDown);
-    laneEl.addEventListener('pointermove', handleMelodyLanePointerMove);
-    laneEl.addEventListener('pointerup', handleMelodyLanePointerUp);
-    laneEl.addEventListener('pointercancel', handleMelodyLanePointerCancel);
-    melodyLanesEl.appendChild(laneEl);
-  });
-  renderMelodyNotes();
-  renderMelodyTicks();
-}
-
-function renderMelodyNotes() {
-  const lanes = Array.from(melodyLanesEl.children);
-  const totalSlots = getTotalSlots();
-  const gridWidth = melodyGridEl.clientWidth || melodyGridEl.offsetWidth;
-  const slotWidth = totalSlots > 0 ? gridWidth / totalSlots : 0;
-  lanes.forEach((laneEl) => {
-    Array.from(laneEl.querySelectorAll('.note-block')).forEach((child) => child.remove());
-  });
-  const laneData = getMelodyLanes();
-  state.melodyNotes.forEach((note) => {
-    const laneInfoIndex = laneData.findIndex((lane) => lane.laneIndex === note.laneIndex);
-    if (laneInfoIndex < 0) return;
-    const laneEl = lanes[laneInfoIndex];
-    if (!laneEl) return;
-    const block = document.createElement('div');
-    block.className = 'note-block';
-    block.dataset.id = note.id;
-    block.dataset.type = 'melody';
-    block.textContent = laneData[laneInfoIndex].name;
-    const left = note.slot * slotWidth;
-    block.style.left = `${left}px`;
-    block.style.width = `${Math.max(slotWidth * note.len, slotWidth * 0.8)}px`;
-    laneEl.appendChild(block);
-
-    const handle = document.createElement('div');
-    handle.className = 'resize-handle';
-    block.appendChild(handle);
-
-    block.addEventListener('pointerdown', (event) => startMelodyDrag(event, note));
-    block.addEventListener('pointermove', handleMelodyBlockPointerMove);
-    block.addEventListener('pointerup', endBlockInteraction);
-    block.addEventListener('pointercancel', endBlockInteraction);
-    block.addEventListener('dblclick', () => deleteMelodyNote(note.id));
-
-    handle.addEventListener('pointerdown', (event) => startMelodyResize(event, note));
-    handle.addEventListener('pointermove', handleMelodyResizeMove);
-    handle.addEventListener('pointerup', endBlockInteraction);
-    handle.addEventListener('pointercancel', endBlockInteraction);
+  getSynthTracks().forEach((track) => {
+    track.notes.forEach((note) => {
+      note.laneIndex = Math.max(0, Math.min(note.laneIndex, maxIndex));
+    });
   });
 }
 
@@ -208,7 +224,144 @@ function renderMelodyTicks() {
   }
 }
 
-function renderDrumLanes() {
+function renderDrumTicks() {
+  drumTicksEl.innerHTML = '';
+  const totalSlots = getTotalSlots();
+  const beatSlots = state.grid / 4;
+  for (let slot = 0; slot <= totalSlots; slot++) {
+    const tick = document.createElement('div');
+    tick.className = 'tick';
+    if (slot % beatSlots === 0) {
+      tick.classList.add('beat');
+    }
+    tick.style.left = `${(slot / totalSlots) * 100}%`;
+    drumTicksEl.appendChild(tick);
+  }
+}
+function renderTrackTabs() {
+  trackTabsEl.innerHTML = '';
+  state.tracks.forEach((track) => {
+    const tab = document.createElement('button');
+    tab.className = `track-tab${track.id === state.activeTrackId ? ' active' : ''}`;
+    tab.type = 'button';
+    tab.textContent = track.name;
+    tab.addEventListener('click', () => selectTrack(track.id));
+    trackTabsEl.appendChild(tab);
+  });
+}
+
+function selectTrack(trackId) {
+  state.activeTrackId = trackId;
+  renderTrackTabs();
+  renderActiveTrack();
+}
+
+function renderActiveTrack() {
+  const track = getActiveTrack();
+  if (!track) return;
+  if (track.type === 'synth') {
+    synthPanelEl.classList.remove('hidden');
+    drumPanelEl.classList.add('hidden');
+    renderSynthPanel(track);
+  } else {
+    drumPanelEl.classList.remove('hidden');
+    synthPanelEl.classList.add('hidden');
+    renderDrumPanel(track);
+  }
+}
+
+function updateChordModeButton(track) {
+  const active = track.chordMode;
+  chordModeBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  chordModeBtn.textContent = active ? 'Chord Mode: On' : 'Chord Mode: Off';
+}
+
+function updateOctaveLabel(track) {
+  octaveLabel.textContent = `Oct ${track.octave}`;
+}
+
+function renderSynthPanel(track) {
+  synthTitleEl.textContent = track.name;
+  updateChordModeButton(track);
+  updateOctaveLabel(track);
+  presetSelect.value = track.preset;
+  renderSynthLanes(track);
+  renderMelodyTicks();
+}
+
+function renderSynthLanes(track) {
+  normalizeMelodyLaneIndices();
+  melodyLanesEl.innerHTML = '';
+  const lanes = getMelodyLanes(track);
+  melodyLanesEl.style.gridTemplateRows = `repeat(${lanes.length}, 1fr)`;
+  lanes.forEach((lane) => {
+    const laneEl = document.createElement('div');
+    laneEl.className = 'lane';
+    if (lane.isRoot) {
+      laneEl.classList.add('root');
+    }
+    laneEl.dataset.laneIndex = lane.laneIndex;
+    const label = document.createElement('strong');
+    label.textContent = lane.name;
+    laneEl.appendChild(label);
+    laneEl.addEventListener('pointerdown', handleMelodyLanePointerDown);
+    laneEl.addEventListener('pointermove', handleMelodyLanePointerMove);
+    laneEl.addEventListener('pointerup', handleMelodyLanePointerUp);
+    laneEl.addEventListener('pointercancel', handleMelodyLanePointerCancel);
+    melodyLanesEl.appendChild(laneEl);
+  });
+  renderSynthNotes(track);
+}
+
+function renderSynthNotes(track) {
+  const lanes = Array.from(melodyLanesEl.children);
+  const totalSlots = getTotalSlots();
+  const gridWidth = melodyGridEl.clientWidth || melodyGridEl.offsetWidth;
+  const slotWidth = totalSlots > 0 ? gridWidth / totalSlots : 0;
+  lanes.forEach((laneEl) => {
+    Array.from(laneEl.querySelectorAll('.note-block')).forEach((child) => child.remove());
+  });
+  const laneData = getMelodyLanes(track);
+  track.notes.forEach((note) => {
+    const laneInfoIndex = laneData.findIndex((lane) => lane.laneIndex === note.laneIndex);
+    if (laneInfoIndex < 0) return;
+    const laneEl = lanes[laneInfoIndex];
+    if (!laneEl) return;
+    const block = document.createElement('div');
+    block.className = 'note-block';
+    block.dataset.id = note.id;
+    block.dataset.type = 'melody';
+    block.dataset.trackId = track.id;
+    block.textContent = laneData[laneInfoIndex].name;
+    const left = note.slot * slotWidth;
+    block.style.left = `${left}px`;
+    block.style.width = `${Math.max(slotWidth * note.len, slotWidth * 0.8)}px`;
+    laneEl.appendChild(block);
+
+    const handle = document.createElement('div');
+    handle.className = 'resize-handle';
+    block.appendChild(handle);
+
+    block.addEventListener('pointerdown', (event) => startMelodyDrag(event, note));
+    block.addEventListener('pointermove', handleMelodyBlockPointerMove);
+    block.addEventListener('pointerup', endBlockInteraction);
+    block.addEventListener('pointercancel', endBlockInteraction);
+    block.addEventListener('dblclick', () => deleteMelodyNote(note.id, track.id));
+
+    handle.addEventListener('pointerdown', (event) => startMelodyResize(event, note));
+    handle.addEventListener('pointermove', handleMelodyResizeMove);
+    handle.addEventListener('pointerup', endBlockInteraction);
+    handle.addEventListener('pointercancel', endBlockInteraction);
+  });
+}
+
+function renderDrumPanel(track) {
+  drumTitleEl.textContent = track.name;
+  renderDrumLanes(track);
+  renderDrumTicks();
+}
+
+function renderDrumLanes(track) {
   drumLanesEl.innerHTML = '';
   drumLanesEl.style.gridTemplateRows = `repeat(${DRUM_LANES.length}, 1fr)`;
   DRUM_LANES.forEach((lane) => {
@@ -224,11 +377,10 @@ function renderDrumLanes() {
     laneEl.addEventListener('pointercancel', handleDrumLanePointerCancel);
     drumLanesEl.appendChild(laneEl);
   });
-  renderDrumNotes();
-  renderDrumTicks();
+  renderDrumNotes(track);
 }
 
-function renderDrumNotes() {
+function renderDrumNotes(track) {
   const lanes = Array.from(drumLanesEl.children);
   const totalSlots = getTotalSlots();
   const gridWidth = drumGridEl.clientWidth || drumGridEl.offsetWidth;
@@ -236,7 +388,7 @@ function renderDrumNotes() {
   lanes.forEach((laneEl) => {
     Array.from(laneEl.querySelectorAll('.note-block')).forEach((child) => child.remove());
   });
-  state.drumNotes.forEach((note) => {
+  track.notes.forEach((note) => {
     const laneIndex = DRUM_LANES.findIndex((lane) => lane.id === note.lane);
     if (laneIndex < 0) return;
     const laneEl = lanes[laneIndex];
@@ -245,6 +397,7 @@ function renderDrumNotes() {
     block.className = 'note-block drum-note';
     block.dataset.id = note.id;
     block.dataset.type = 'drum';
+    block.dataset.trackId = track.id;
     block.textContent = DRUM_LANES[laneIndex].label;
     const left = note.slot * slotWidth;
     block.style.left = `${left}px`;
@@ -259,7 +412,7 @@ function renderDrumNotes() {
     block.addEventListener('pointermove', handleDrumBlockPointerMove);
     block.addEventListener('pointerup', endBlockInteraction);
     block.addEventListener('pointercancel', endBlockInteraction);
-    block.addEventListener('dblclick', () => deleteDrumNote(note.id));
+    block.addEventListener('dblclick', () => deleteDrumNote(note.id, track.id));
 
     handle.addEventListener('pointerdown', (event) => startDrumResize(event, note));
     handle.addEventListener('pointermove', handleDrumResizeMove);
@@ -267,22 +420,6 @@ function renderDrumNotes() {
     handle.addEventListener('pointercancel', endBlockInteraction);
   });
 }
-
-function renderDrumTicks() {
-  drumTicksEl.innerHTML = '';
-  const totalSlots = getTotalSlots();
-  const beatSlots = state.grid / 4;
-  for (let slot = 0; slot <= totalSlots; slot++) {
-    const tick = document.createElement('div');
-    tick.className = 'tick';
-    if (slot % beatSlots === 0) {
-      tick.classList.add('beat');
-    }
-    tick.style.left = `${(slot / totalSlots) * 100}%`;
-    drumTicksEl.appendChild(tick);
-  }
-}
-
 function getBoundaryFromEvent(event, gridEl) {
   const totalSlots = getTotalSlots();
   if (totalSlots <= 0) return 0;
@@ -292,136 +429,41 @@ function getBoundaryFromEvent(event, gridEl) {
   return Math.round(x / slotWidth);
 }
 
-function startMelodyDrag(event, note) {
-  if (event.target.classList.contains('resize-handle')) return;
-  event.stopPropagation();
-  const pointerId = event.pointerId;
-  const pointerSlot = getBoundaryFromEvent(event, melodyGridEl);
-  pointerInteractions.set(pointerId, {
-    type: 'melody-drag',
-    note,
-    offset: pointerSlot - note.slot,
-  });
-  event.currentTarget.setPointerCapture(pointerId);
-}
-
-function handleMelodyBlockPointerMove(event) {
-  const interaction = pointerInteractions.get(event.pointerId);
-  if (!interaction || interaction.type !== 'melody-drag') return;
-  const totalSlots = getTotalSlots();
-  const pointerSlot = Math.max(0, Math.min(getBoundaryFromEvent(event, melodyGridEl), totalSlots));
-  let newSlot = pointerSlot - interaction.offset;
-  newSlot = Math.max(0, Math.min(totalSlots - interaction.note.len, newSlot));
-  if (interaction.note.slot !== newSlot) {
-    interaction.note.slot = newSlot;
-    renderMelodyNotes();
-  }
-}
-
-function startMelodyResize(event, note) {
-  event.stopPropagation();
-  const pointerId = event.pointerId;
-  pointerInteractions.set(pointerId, { type: 'melody-resize', note });
-  event.target.setPointerCapture(pointerId);
-}
-
-function handleMelodyResizeMove(event) {
-  const interaction = pointerInteractions.get(event.pointerId);
-  if (!interaction || interaction.type !== 'melody-resize') return;
-  const totalSlots = getTotalSlots();
-  const boundary = Math.max(0, Math.min(getBoundaryFromEvent(event, melodyGridEl), totalSlots));
-  const endBoundary = Math.max(interaction.note.slot + 1, boundary);
-  const newLen = Math.max(1, Math.min(totalSlots - interaction.note.slot, endBoundary - interaction.note.slot));
-  if (interaction.note.len !== newLen) {
-    interaction.note.len = newLen;
-    renderMelodyNotes();
-  }
-}
-
-function startDrumDrag(event, note) {
-  if (event.target.classList.contains('resize-handle')) return;
-  event.stopPropagation();
-  const pointerId = event.pointerId;
-  const pointerSlot = getBoundaryFromEvent(event, drumGridEl);
-  pointerInteractions.set(pointerId, {
-    type: 'drum-drag',
-    note,
-    offset: pointerSlot - note.slot,
-  });
-  event.currentTarget.setPointerCapture(pointerId);
-}
-
-function handleDrumBlockPointerMove(event) {
-  const interaction = pointerInteractions.get(event.pointerId);
-  if (!interaction || interaction.type !== 'drum-drag') return;
-  const totalSlots = getTotalSlots();
-  const pointerSlot = Math.max(0, Math.min(getBoundaryFromEvent(event, drumGridEl), totalSlots));
-  let newSlot = pointerSlot - interaction.offset;
-  newSlot = Math.max(0, Math.min(totalSlots - interaction.note.len, newSlot));
-  if (interaction.note.slot !== newSlot) {
-    interaction.note.slot = newSlot;
-    renderDrumNotes();
-  }
-}
-
-function startDrumResize(event, note) {
-  event.stopPropagation();
-  const pointerId = event.pointerId;
-  pointerInteractions.set(pointerId, { type: 'drum-resize', note });
-  event.target.setPointerCapture(pointerId);
-}
-
-function handleDrumResizeMove(event) {
-  const interaction = pointerInteractions.get(event.pointerId);
-  if (!interaction || interaction.type !== 'drum-resize') return;
-  const totalSlots = getTotalSlots();
-  const boundary = Math.max(0, Math.min(getBoundaryFromEvent(event, drumGridEl), totalSlots));
-  const endBoundary = Math.max(interaction.note.slot + 1, boundary);
-  const newLen = Math.max(1, Math.min(totalSlots - interaction.note.slot, endBoundary - interaction.note.slot));
-  if (interaction.note.len !== newLen) {
-    interaction.note.len = newLen;
-    renderDrumNotes();
-  }
-}
-
-function endBlockInteraction(event) {
-  const pointerId = event.pointerId;
-  const target = event.currentTarget;
-  if (target.hasPointerCapture(pointerId)) {
-    target.releasePointerCapture(pointerId);
-  }
-  const interaction = pointerInteractions.get(pointerId);
-  if (!interaction) return;
-  pointerInteractions.delete(pointerId);
-  if (interaction.type.startsWith('melody')) {
-    renderMelodyNotes();
-  } else if (interaction.type.startsWith('drum')) {
-    renderDrumNotes();
-  }
-  rebuildSequences();
+function createNotesForLane(track, laneIndex, slot) {
+  const intervals = SCALE_INTERVALS[state.scale] || SCALE_INTERVALS.Major;
+  const maxIndex = Math.max(0, intervals.length - 1);
+  const indices = track.chordMode ? [laneIndex, laneIndex + 2, laneIndex + 4] : [laneIndex];
+  return indices
+    .filter((index) => index >= 0 && index <= maxIndex)
+    .map((index) => ({
+      id: crypto.randomUUID(),
+      trackId: track.id,
+      laneIndex: index,
+      octave: track.octave,
+      slot,
+      len: 1,
+    }));
 }
 
 function handleMelodyLanePointerDown(event) {
+  const track = getActiveTrack();
+  if (!track || track.type !== 'synth') return;
   const laneIndex = Number(event.currentTarget.dataset.laneIndex);
   const pointerId = event.pointerId;
   const totalSlots = getTotalSlots();
   if (!totalSlots) return;
   event.currentTarget.setPointerCapture(pointerId);
   const startBoundary = Math.min(totalSlots - 1, getBoundaryFromEvent(event, melodyGridEl));
-  const note = {
-    id: crypto.randomUUID(),
-    laneIndex,
-    octave: state.visibleOctave,
-    slot: startBoundary,
-    len: 1,
-  };
-  state.melodyNotes.push(note);
+  const notes = createNotesForLane(track, laneIndex, startBoundary);
+  if (!notes.length) return;
+  notes.forEach((note) => track.notes.push(note));
   pointerInteractions.set(pointerId, {
     type: 'melody-create',
-    note,
+    notes,
     startBoundary,
+    trackId: track.id,
   });
-  renderMelodyNotes();
+  renderSynthNotes(track);
 }
 
 function handleMelodyLanePointerMove(event) {
@@ -439,6 +481,8 @@ function handleMelodyLanePointerCancel(event) {
 }
 
 function handleDrumLanePointerDown(event) {
+  const track = getActiveTrack();
+  if (!track || track.type !== 'drum') return;
   const lane = event.currentTarget.dataset.lane;
   const pointerId = event.pointerId;
   const totalSlots = getTotalSlots();
@@ -447,17 +491,19 @@ function handleDrumLanePointerDown(event) {
   const startBoundary = Math.min(totalSlots - 1, getBoundaryFromEvent(event, drumGridEl));
   const note = {
     id: crypto.randomUUID(),
+    trackId: track.id,
     lane,
     slot: startBoundary,
     len: 1,
   };
-  state.drumNotes.push(note);
+  track.notes.push(note);
   pointerInteractions.set(pointerId, {
     type: 'drum-create',
-    note,
+    notes: [note],
     startBoundary,
+    trackId: track.id,
   });
-  renderDrumNotes();
+  renderDrumNotes(track);
 }
 
 function handleDrumLanePointerMove(event) {
@@ -475,16 +521,21 @@ function handleDrumLanePointerCancel(event) {
 }
 
 function updateCreatedNote(interaction, event, gridEl) {
+  const track = getTrackById(interaction.trackId);
+  if (!track) return;
   const totalSlots = getTotalSlots();
   const boundary = Math.max(0, Math.min(getBoundaryFromEvent(event, gridEl), totalSlots));
   const start = Math.min(interaction.startBoundary, totalSlots - 1);
-  interaction.note.slot = start;
   const endBoundary = Math.max(start + 1, boundary);
-  interaction.note.len = Math.max(1, Math.min(totalSlots - start, endBoundary - start));
-  if (interaction.type.startsWith('melody')) {
-    renderMelodyNotes();
+  const newLen = Math.max(1, Math.min(totalSlots - start, endBoundary - start));
+  interaction.notes.forEach((note) => {
+    note.slot = start;
+    note.len = newLen;
+  });
+  if (track.type === 'synth') {
+    renderSynthNotes(track);
   } else {
-    renderDrumNotes();
+    renderDrumNotes(track);
   }
 }
 
@@ -495,59 +546,172 @@ function finalizeLaneInteraction(event, cancel = false) {
   }
   const interaction = pointerInteractions.get(pointerId);
   if (!interaction) return;
-  if (cancel) {
-    if (interaction.type.startsWith('melody')) {
-      deleteMelodyNote(interaction.note.id);
+  const track = getTrackById(interaction.trackId);
+  if (track) {
+    if (cancel) {
+      interaction.notes.forEach((note) => {
+        if (track.type === 'synth') {
+          deleteMelodyNote(note.id, track.id);
+        } else {
+          deleteDrumNote(note.id, track.id);
+        }
+      });
     } else {
-      deleteDrumNote(interaction.note.id);
+      if (track.type === 'synth') {
+        renderSynthNotes(track);
+      } else {
+        renderDrumNotes(track);
+      }
+      rebuildSequences();
     }
-  } else {
-    if (interaction.type.startsWith('melody')) {
-      renderMelodyNotes();
-    } else {
-      renderDrumNotes();
-    }
-    rebuildSequences();
   }
   pointerInteractions.delete(pointerId);
 }
 
-function deleteMelodyNote(id) {
-  state.melodyNotes = state.melodyNotes.filter((note) => note.id !== id);
-  renderMelodyNotes();
-  rebuildSequences();
+function startMelodyDrag(event, note) {
+  if (event.target.classList.contains('resize-handle')) return;
+  event.stopPropagation();
+  const pointerId = event.pointerId;
+  const pointerSlot = getBoundaryFromEvent(event, melodyGridEl);
+  pointerInteractions.set(pointerId, {
+    type: 'melody-drag',
+    note,
+    offset: pointerSlot - note.slot,
+    trackId: note.trackId,
+  });
+  event.currentTarget.setPointerCapture(pointerId);
 }
 
-function deleteDrumNote(id) {
-  state.drumNotes = state.drumNotes.filter((note) => note.id !== id);
-  renderDrumNotes();
-  rebuildSequences();
-}
-
-function triggerMelody(note, time) {
-  const duration = note.len * getGridDurationSeconds();
-  melodySynth.triggerAttackRelease(
-    Tone.Frequency(getMidiForLane(note.laneIndex, note.octave), 'midi'),
-    duration,
-    time,
-  );
-  flashNote(note.id);
-}
-
-function triggerDrum(note, time) {
-  const synth = drumSynths[note.lane];
-  if (!synth) return;
-  const duration = note.len * getGridDurationSeconds();
-  if (note.lane === 'kick') {
-    synth.triggerAttackRelease('C2', duration, time);
-  } else if (note.lane === 'snare') {
-    synth.triggerAttackRelease(duration, time);
-  } else {
-    synth.triggerAttackRelease('C6', duration, time);
+function handleMelodyBlockPointerMove(event) {
+  const interaction = pointerInteractions.get(event.pointerId);
+  if (!interaction || interaction.type !== 'melody-drag') return;
+  const track = getTrackById(interaction.trackId);
+  if (!track) return;
+  const totalSlots = getTotalSlots();
+  const pointerSlot = Math.max(0, Math.min(getBoundaryFromEvent(event, melodyGridEl), totalSlots));
+  let newSlot = pointerSlot - interaction.offset;
+  newSlot = Math.max(0, Math.min(totalSlots - interaction.note.len, newSlot));
+  if (interaction.note.slot !== newSlot) {
+    interaction.note.slot = newSlot;
+    renderSynthNotes(track);
   }
-  flashNote(note.id);
 }
 
+function startMelodyResize(event, note) {
+  event.stopPropagation();
+  const pointerId = event.pointerId;
+  pointerInteractions.set(pointerId, {
+    type: 'melody-resize',
+    note,
+    trackId: note.trackId,
+  });
+  event.target.setPointerCapture(pointerId);
+}
+
+function handleMelodyResizeMove(event) {
+  const interaction = pointerInteractions.get(event.pointerId);
+  if (!interaction || interaction.type !== 'melody-resize') return;
+  const track = getTrackById(interaction.trackId);
+  if (!track) return;
+  const totalSlots = getTotalSlots();
+  const boundary = Math.max(0, Math.min(getBoundaryFromEvent(event, melodyGridEl), totalSlots));
+  const endBoundary = Math.max(interaction.note.slot + 1, boundary);
+  const newLen = Math.max(1, Math.min(totalSlots - interaction.note.slot, endBoundary - interaction.note.slot));
+  if (interaction.note.len !== newLen) {
+    interaction.note.len = newLen;
+    renderSynthNotes(track);
+  }
+}
+
+function startDrumDrag(event, note) {
+  if (event.target.classList.contains('resize-handle')) return;
+  event.stopPropagation();
+  const pointerId = event.pointerId;
+  const pointerSlot = getBoundaryFromEvent(event, drumGridEl);
+  pointerInteractions.set(pointerId, {
+    type: 'drum-drag',
+    note,
+    offset: pointerSlot - note.slot,
+    trackId: note.trackId,
+  });
+  event.currentTarget.setPointerCapture(pointerId);
+}
+
+function handleDrumBlockPointerMove(event) {
+  const interaction = pointerInteractions.get(event.pointerId);
+  if (!interaction || interaction.type !== 'drum-drag') return;
+  const track = getTrackById(interaction.trackId);
+  if (!track) return;
+  const totalSlots = getTotalSlots();
+  const pointerSlot = Math.max(0, Math.min(getBoundaryFromEvent(event, drumGridEl), totalSlots));
+  let newSlot = pointerSlot - interaction.offset;
+  newSlot = Math.max(0, Math.min(totalSlots - interaction.note.len, newSlot));
+  if (interaction.note.slot !== newSlot) {
+    interaction.note.slot = newSlot;
+    renderDrumNotes(track);
+  }
+}
+
+function startDrumResize(event, note) {
+  event.stopPropagation();
+  const pointerId = event.pointerId;
+  pointerInteractions.set(pointerId, {
+    type: 'drum-resize',
+    note,
+    trackId: note.trackId,
+  });
+  event.target.setPointerCapture(pointerId);
+}
+
+function handleDrumResizeMove(event) {
+  const interaction = pointerInteractions.get(event.pointerId);
+  if (!interaction || interaction.type !== 'drum-resize') return;
+  const track = getTrackById(interaction.trackId);
+  if (!track) return;
+  const totalSlots = getTotalSlots();
+  const boundary = Math.max(0, Math.min(getBoundaryFromEvent(event, drumGridEl), totalSlots));
+  const endBoundary = Math.max(interaction.note.slot + 1, boundary);
+  const newLen = Math.max(1, Math.min(totalSlots - interaction.note.slot, endBoundary - interaction.note.slot));
+  if (interaction.note.len !== newLen) {
+    interaction.note.len = newLen;
+    renderDrumNotes(track);
+  }
+}
+
+function endBlockInteraction(event) {
+  const pointerId = event.pointerId;
+  const target = event.currentTarget;
+  if (target.hasPointerCapture(pointerId)) {
+    target.releasePointerCapture(pointerId);
+  }
+  const interaction = pointerInteractions.get(pointerId);
+  if (!interaction) return;
+  pointerInteractions.delete(pointerId);
+  const track = getTrackById(interaction.trackId);
+  if (!track) return;
+  if (interaction.type.startsWith('melody')) {
+    renderSynthNotes(track);
+  } else if (interaction.type.startsWith('drum')) {
+    renderDrumNotes(track);
+  }
+  rebuildSequences();
+}
+
+function deleteMelodyNote(id, trackId) {
+  const track = getTrackById(trackId);
+  if (!track || track.type !== 'synth') return;
+  track.notes = track.notes.filter((note) => note.id !== id);
+  renderSynthNotes(track);
+  rebuildSequences();
+}
+
+function deleteDrumNote(id, trackId) {
+  const track = getTrackById(trackId);
+  if (!track || track.type !== 'drum') return;
+  track.notes = track.notes.filter((note) => note.id !== id);
+  renderDrumNotes(track);
+  rebuildSequences();
+}
 function flashNote(id) {
   const blocks = document.querySelectorAll(`.note-block[data-id="${id}"]`);
   blocks.forEach((block) => {
@@ -556,38 +720,56 @@ function flashNote(id) {
   });
 }
 
+function triggerSynth(trackId, note, time) {
+  const instrument = trackInstruments.get(trackId);
+  if (!instrument || instrument.type !== 'synth') return;
+  const duration = note.len * getGridDurationSeconds();
+  instrument.node.triggerAttackRelease(
+    Tone.Frequency(getMidiForLane(note.laneIndex, note.octave), 'midi'),
+    duration,
+    time,
+  );
+  flashNote(note.id);
+}
+
+function triggerDrum(trackId, note, time) {
+  const instrument = trackInstruments.get(trackId);
+  if (!instrument || instrument.type !== 'drum') return;
+  const duration = note.len * getGridDurationSeconds();
+  if (note.lane === 'kick') {
+    instrument.nodes.kick.triggerAttackRelease('C2', duration, time);
+  } else if (note.lane === 'snare') {
+    instrument.nodes.snare.triggerAttackRelease(duration, time);
+  } else {
+    instrument.nodes.hat.triggerAttackRelease('C6', duration, time);
+  }
+  flashNote(note.id);
+}
+
 function rebuildSequences() {
-  if (state.melodyPart) {
-    state.melodyPart.dispose();
-    state.melodyPart = null;
-  }
-  if (state.drumPart) {
-    state.drumPart.dispose();
-    state.drumPart = null;
-  }
+  trackParts.forEach((part) => part.dispose());
+  trackParts.clear();
   Tone.Transport.cancel(0);
   const gridDur = getGridDurationSeconds();
   const loopDuration = getLoopDurationSeconds();
-  const melodyEvents = [...state.melodyNotes]
-    .sort((a, b) => a.slot - b.slot)
-    .map((note) => ({ time: note.slot * gridDur, note }));
-  if (melodyEvents.length) {
-    const part = new Tone.Part((time, value) => triggerMelody(value.note, time), melodyEvents);
+  state.tracks.forEach((track) => {
+    if (!track.notes.length) return;
+    const events = [...track.notes]
+      .sort((a, b) => a.slot - b.slot)
+      .map((note) => ({ time: note.slot * gridDur, note }));
+    if (!events.length) return;
+    const part = new Tone.Part((time, value) => {
+      if (track.type === 'synth') {
+        triggerSynth(track.id, value.note, time);
+      } else {
+        triggerDrum(track.id, value.note, time);
+      }
+    }, events);
     part.loop = true;
     part.loopEnd = loopDuration;
     part.start(0);
-    state.melodyPart = part;
-  }
-  const drumEvents = [...state.drumNotes]
-    .sort((a, b) => a.slot - b.slot)
-    .map((note) => ({ time: note.slot * gridDur, note }));
-  if (drumEvents.length) {
-    const part = new Tone.Part((time, value) => triggerDrum(value.note, time), drumEvents);
-    part.loop = true;
-    part.loopEnd = loopDuration;
-    part.start(0);
-    state.drumPart = part;
-  }
+    trackParts.set(track.id, part);
+  });
   if (state.playing) {
     Tone.Transport.loopEnd = `${state.bars}m`;
   }
@@ -614,12 +796,7 @@ async function startPlayback() {
 function stopPlayback() {
   Tone.Transport.stop();
   state.playing = false;
-  if (state.melodyPart) {
-    state.melodyPart.stop();
-  }
-  if (state.drumPart) {
-    state.drumPart.stop();
-  }
+  trackParts.forEach((part) => part.stop());
   if (state.playheadRaf) {
     cancelAnimationFrame(state.playheadRaf);
     state.playheadRaf = null;
@@ -639,17 +816,75 @@ function updatePlayheads() {
   state.playheadRaf = requestAnimationFrame(updatePlayheads);
 }
 
+function scaleNotesForGridChange(oldGrid, newGrid) {
+  if (!oldGrid || oldGrid === newGrid) return;
+  const ratio = newGrid / oldGrid;
+  state.tracks.forEach((track) => {
+    track.notes.forEach((note) => {
+      note.slot = Math.round(note.slot * ratio);
+      note.len = Math.max(1, Math.round(note.len * ratio));
+    });
+  });
+  normalizeNotesForGrid();
+}
+
+function updateOctave(delta) {
+  const track = getActiveTrack();
+  if (!track || track.type !== 'synth') return;
+  track.octave = Math.min(6, Math.max(2, track.octave + delta));
+  updateOctaveLabel(track);
+  renderSynthPanel(track);
+  rebuildSequences();
+}
+
+function toggleChordMode() {
+  const track = getActiveTrack();
+  if (!track || track.type !== 'synth') return;
+  track.chordMode = !track.chordMode;
+  updateChordModeButton(track);
+}
+
+function populatePresetOptions() {
+  presetSelect.innerHTML = '';
+  Object.keys(SYNTH_PRESETS).forEach((name) => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    presetSelect.appendChild(option);
+  });
+}
+
+function getNextTrackName(type) {
+  const count = state.tracks.filter((track) => track.type === type).length + 1;
+  return type === 'synth' ? `Synth ${count}` : `Drums ${count}`;
+}
+
+function addSynthTrack() {
+  const track = createSynthTrack(getNextTrackName('synth'));
+  state.tracks.push(track);
+  ensureInstrumentForTrack(track);
+  selectTrack(track.id);
+  rebuildSequences();
+}
+
+function addDrumTrack() {
+  const track = createDrumTrack(getNextTrackName('drum'));
+  state.tracks.push(track);
+  ensureInstrumentForTrack(track);
+  selectTrack(track.id);
+  rebuildSequences();
+}
+
 function initControls() {
   playBtn.addEventListener('click', startPlayback);
   stopBtn.addEventListener('click', stopPlayback);
 
   gridSelect.addEventListener('change', (event) => {
-    state.grid = Number(event.target.value);
-    normalizeNotesForGrid();
-    renderMelodyNotes();
-    renderMelodyTicks();
-    renderDrumNotes();
-    renderDrumTicks();
+    const newGrid = Number(event.target.value);
+    const oldGrid = state.grid;
+    state.grid = newGrid;
+    scaleNotesForGridChange(oldGrid, newGrid);
+    renderActiveTrack();
     rebuildSequences();
   });
 
@@ -664,13 +899,13 @@ function initControls() {
 
   scaleSelect.addEventListener('change', (event) => {
     state.scale = event.target.value;
-    renderMelodyLanes();
+    renderActiveTrack();
     rebuildSequences();
   });
 
   rootSelect.addEventListener('change', (event) => {
     state.root = event.target.value;
-    renderMelodyLanes();
+    renderActiveTrack();
     rebuildSequences();
   });
 
@@ -680,32 +915,51 @@ function initControls() {
 
   octaveUpBtn.addEventListener('click', () => updateOctave(1));
   octaveDownBtn.addEventListener('click', () => updateOctave(-1));
-}
 
-function updateOctave(delta) {
-  state.visibleOctave = Math.min(6, Math.max(2, state.visibleOctave + delta));
-  octaveLabel.textContent = `Oct ${state.visibleOctave}`;
-  renderMelodyLanes();
-  rebuildSequences();
+  chordModeBtn.addEventListener('click', toggleChordMode);
+
+  presetSelect.addEventListener('change', (event) => {
+    const track = getActiveTrack();
+    if (!track || track.type !== 'synth') return;
+    track.preset = event.target.value;
+    ensureInstrumentForTrack(track);
+    rebuildSequences();
+  });
+
+  addSynthTrackBtn.addEventListener('click', addSynthTrack);
+  addDrumTrackBtn.addEventListener('click', addDrumTrack);
 }
 
 function init() {
+  populatePresetOptions();
   bpmValue.textContent = `${state.bpm}`;
   gridSelect.value = `${state.grid}`;
   scaleSelect.value = state.scale;
   rootSelect.value = state.root;
   masterVolume.volume.value = Number(masterVolumeInput.value);
-  octaveLabel.textContent = `Oct ${state.visibleOctave}`;
-  renderMelodyLanes();
-  renderDrumLanes();
+
+  const defaultSynth = createSynthTrack(getNextTrackName('synth'));
+  const defaultDrums = createDrumTrack(getNextTrackName('drum'));
+  state.tracks.push(defaultSynth, defaultDrums);
+  ensureInstrumentForTrack(defaultSynth);
+  ensureInstrumentForTrack(defaultDrums);
+  state.activeTrackId = defaultSynth.id;
+
+  renderTrackTabs();
+  renderActiveTrack();
   initControls();
 }
 
 init();
 
 window.addEventListener('resize', () => {
-  renderMelodyNotes();
-  renderMelodyTicks();
-  renderDrumNotes();
-  renderDrumTicks();
+  const track = getActiveTrack();
+  if (!track) return;
+  if (track.type === 'synth') {
+    renderSynthNotes(track);
+    renderMelodyTicks();
+  } else {
+    renderDrumNotes(track);
+    renderDrumTicks();
+  }
 });
