@@ -239,7 +239,11 @@ const imuToggleBtn = document.getElementById('imuToggle');
 const imuStatusEl = document.getElementById('imuStatus');
 const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).reduce(
   (map, el) => {
-    map[el.dataset.imu] = el;
+    const key = el.dataset.imu;
+    if (!map[key]) {
+      map[key] = [];
+    }
+    map[key].push(el);
     return map;
   },
   {},
@@ -1566,6 +1570,14 @@ function formatImuValue(value, digits = 2, suffix = '') {
   return `${value.toFixed(digits)}${suffix}`;
 }
 
+function setImuValue(key, text) {
+  const elements = imuValueEls[key];
+  if (!elements) return;
+  elements.forEach((el) => {
+    el.textContent = text;
+  });
+}
+
 function updateImuStatus(message) {
   if (imuStatusEl) {
     imuStatusEl.textContent = message;
@@ -1772,72 +1784,56 @@ function renderImuData() {
 
   updateImuOrientationCube(orientation);
 
-  if (imuValueEls['acc-x']) imuValueEls['acc-x'].textContent = formatImuValue(acc.x);
-  if (imuValueEls['acc-y']) imuValueEls['acc-y'].textContent = formatImuValue(acc.y);
-  if (imuValueEls['acc-z']) imuValueEls['acc-z'].textContent = formatImuValue(acc.z);
-  if (imuValueEls['acc-mag'])
-    imuValueEls['acc-mag'].textContent = formatImuValue(acc.magnitude);
-  if (imuValueEls['acc-peak'])
-    imuValueEls['acc-peak'].textContent = formatImuValue(
-      imuState.stats.accelerationPeak,
-    );
+  setImuValue('acc-x', formatImuValue(acc.x));
+  setImuValue('acc-y', formatImuValue(acc.y));
+  setImuValue('acc-z', formatImuValue(acc.z));
+  setImuValue('acc-mag', formatImuValue(acc.magnitude));
+  setImuValue('acc-peak', formatImuValue(imuState.stats.accelerationPeak));
 
-  if (imuValueEls['accg-x']) imuValueEls['accg-x'].textContent = formatImuValue(accG.x);
-  if (imuValueEls['accg-y']) imuValueEls['accg-y'].textContent = formatImuValue(accG.y);
-  if (imuValueEls['accg-z']) imuValueEls['accg-z'].textContent = formatImuValue(accG.z);
-  if (imuValueEls['accg-mag'])
-    imuValueEls['accg-mag'].textContent = formatImuValue(accG.magnitude);
+  setImuValue('accg-x', formatImuValue(accG.x));
+  setImuValue('accg-y', formatImuValue(accG.y));
+  setImuValue('accg-z', formatImuValue(accG.z));
+  setImuValue('accg-mag', formatImuValue(accG.magnitude));
 
-  if (imuValueEls['rot-alpha'])
-    imuValueEls['rot-alpha'].textContent = formatImuValue(rotation.alpha, 1);
-  if (imuValueEls['rot-beta'])
-    imuValueEls['rot-beta'].textContent = formatImuValue(rotation.beta, 1);
-  if (imuValueEls['rot-gamma'])
-    imuValueEls['rot-gamma'].textContent = formatImuValue(rotation.gamma, 1);
-  if (imuValueEls['rot-mag'])
-    imuValueEls['rot-mag'].textContent = formatImuValue(rotation.magnitude, 1);
-  if (imuValueEls['rot-peak'])
-    imuValueEls['rot-peak'].textContent = formatImuValue(
-      imuState.stats.rotationPeak,
-      1,
-    );
+  setImuValue('rot-alpha', formatImuValue(rotation.alpha, 1));
+  setImuValue('rot-beta', formatImuValue(rotation.beta, 1));
+  setImuValue('rot-gamma', formatImuValue(rotation.gamma, 1));
+  setImuValue('rot-mag', formatImuValue(rotation.magnitude, 1));
+  setImuValue('rot-peak', formatImuValue(imuState.stats.rotationPeak, 1));
 
-  if (imuValueEls['ori-alpha'])
-    imuValueEls['ori-alpha'].textContent = formatImuValue(orientation.alpha, 1, '°');
-  if (imuValueEls['ori-beta'])
-    imuValueEls['ori-beta'].textContent = formatImuValue(orientation.beta, 1, '°');
-  if (imuValueEls['ori-gamma'])
-    imuValueEls['ori-gamma'].textContent = formatImuValue(orientation.gamma, 1, '°');
-  if (imuValueEls['ori-absolute']) {
-    const orientationAvailable =
-      orientation.alpha != null || orientation.beta != null || orientation.gamma != null;
-    if (orientationAvailable) {
-      const absoluteState = orientation.absolute ? 'Yes' : 'No';
-      imuValueEls['ori-absolute'].textContent = orientation.headingSource
-        ? `${absoluteState} (${orientation.headingSource})`
-        : absoluteState;
-    } else {
-      imuValueEls['ori-absolute'].textContent = '--';
-    }
+  setImuValue('ori-alpha', formatImuValue(orientation.alpha, 1, '°'));
+  setImuValue('ori-beta', formatImuValue(orientation.beta, 1, '°'));
+  setImuValue('ori-gamma', formatImuValue(orientation.gamma, 1, '°'));
+  const orientationAvailable =
+    orientation.alpha != null || orientation.beta != null || orientation.gamma != null;
+  if (orientationAvailable) {
+    const absoluteState = orientation.absolute ? 'Yes' : 'No';
+    const absoluteLabel = orientation.headingSource
+      ? `${absoluteState} (${orientation.headingSource})`
+      : absoluteState;
+    setImuValue('ori-absolute', absoluteLabel);
+  } else {
+    setImuValue('ori-absolute', '--');
   }
 
-  if (imuValueEls.samples)
-    imuValueEls.samples.textContent = `${imuState.samples}`;
-  if (imuValueEls.interval) {
-    imuValueEls.interval.textContent =
-      avgInterval == null ? '--' : `${avgInterval.toFixed(0)} ms`;
+  setImuValue('samples', `${imuState.samples}`);
+  if (avgInterval == null) {
+    setImuValue('interval', '--');
+  } else {
+    setImuValue('interval', `${avgInterval.toFixed(0)} ms`);
   }
-  if (imuValueEls.timestamp) {
-    if (imuState.data.lastTimestamp) {
-      const date = new Date(imuState.data.lastTimestamp);
-      imuValueEls.timestamp.textContent = date.toLocaleTimeString([], {
+  if (imuState.data.lastTimestamp) {
+    const date = new Date(imuState.data.lastTimestamp);
+    setImuValue(
+      'timestamp',
+      date.toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-      });
-    } else {
-      imuValueEls.timestamp.textContent = '--';
-    }
+      }),
+    );
+  } else {
+    setImuValue('timestamp', '--');
   }
 }
 
