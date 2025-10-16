@@ -1745,12 +1745,12 @@ function drawImuPlotter() {
   const { ctx, width, height } = imuPlotter;
   ctx.clearRect(0, 0, width, height);
 
-  const leftPadding = 110;
-  const labelColumnX = 18;
-  const rightPadding = 28;
-  const topPadding = 20;
-  const bottomPadding = 28;
-  const axisGap = 24;
+  const leftPadding = 150;
+  const labelColumnX = 28;
+  const rightPadding = 36;
+  const topPadding = 28;
+  const bottomPadding = 36;
+  const axisGap = 32;
   const axes = IMU_AXES;
   const axisCount = axes.length;
   const availableHeight = Math.max(
@@ -1808,13 +1808,13 @@ function drawImuPlotter() {
       ctx.stroke();
     }
 
-    ctx.font = "600 12px 'Manrope', sans-serif";
+    ctx.font = "600 14px 'Manrope', sans-serif";
     ctx.fillStyle = axis.labelColor || 'rgba(226, 232, 240, 0.85)';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText(axis.label, labelColumnX, top);
 
-    ctx.font = "500 11px 'Manrope', sans-serif";
+    ctx.font = "500 12px 'Manrope', sans-serif";
     ctx.fillStyle = 'rgba(148, 163, 184, 0.75)';
     ctx.textBaseline = 'top';
     ctx.fillText(`${axis.max}`, labelColumnX, top + 18);
@@ -1826,7 +1826,7 @@ function drawImuPlotter() {
     axisSeries.forEach((series) => {
       if (!dataLength) return;
       ctx.strokeStyle = series.color;
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 2;
       ctx.beginPath();
       let hasPoint = false;
       for (let i = 0; i < dataLength; i += 1) {
@@ -1860,7 +1860,7 @@ function drawImuPlotter() {
         const lastY = mapImuValueToY(lastValue, axis, top, axisHeight);
         ctx.fillStyle = series.color;
         ctx.beginPath();
-        ctx.arc(lastX, lastY, 3, 0, Math.PI * 2);
+        ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
         ctx.fill();
       }
     });
