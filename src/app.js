@@ -126,6 +126,7 @@ const masterVolume = new Tone.Volume(-8).toDestination();
 const trackInstruments = new Map();
 const trackParts = new Map();
 const pointerInteractions = new Map();
+let pendingSynthSequenceRefresh = null;
 const imuState = {
   active: false,
   samples: 0,
@@ -893,12 +894,25 @@ function updateSynthEditorControls(track) {
   updateSynthStatus(track);
 }
 
+function scheduleSynthSequenceRefresh() {
+  if (pendingSynthSequenceRefresh) {
+    clearTimeout(pendingSynthSequenceRefresh);
+  }
+  pendingSynthSequenceRefresh = setTimeout(() => {
+    pendingSynthSequenceRefresh = null;
+    rebuildSequences();
+  }, 0);
+}
+
 function commitSynthConfigUpdate(track, updater) {
   if (!track || track.type !== 'synth') return;
   if (!track.synthConfig) {
     track.synthConfig = cloneSynthConfig(getPresetConfigById(track.presetId));
   }
-  updater(track.synthConfig);
+  const shouldApply = updater(track.synthConfig);
+  if (shouldApply === false) {
+    return;
+  }
   const matchedPreset = findMatchingPresetId(track.synthConfig);
   if (matchedPreset) {
     track.presetId = matchedPreset;
@@ -908,6 +922,7 @@ function commitSynthConfigUpdate(track, updater) {
   }
   ensureInstrumentForTrack(track);
   updateSynthEditorControls(track);
+  scheduleSynthSequenceRefresh();
 }
 
 function saveCurrentSynthAsPreset() {
@@ -1468,6 +1483,10 @@ function triggerDrum(trackId, note, time) {
 }
 
 function rebuildSequences() {
+  if (pendingSynthSequenceRefresh) {
+    clearTimeout(pendingSynthSequenceRefresh);
+    pendingSynthSequenceRefresh = null;
+  }
   trackParts.forEach((part) => part.dispose());
   trackParts.clear();
   Tone.Transport.cancel(0);
@@ -2169,7 +2188,11 @@ function initControls() {
       if (!track || track.type !== 'synth') return;
       const type = event.target.value;
       commitSynthConfigUpdate(track, (config) => {
+        if (config.oscillator.type === type) {
+          return false;
+        }
         config.oscillator.type = type;
+        return true;
       });
     });
   }
@@ -2180,7 +2203,11 @@ function initControls() {
       if (!track || track.type !== 'synth') return;
       const value = event.target.value;
       commitSynthConfigUpdate(track, (config) => {
+        if (config.filter.type === value) {
+          return false;
+        }
         config.filter.type = value;
+        return true;
       });
     });
   }
@@ -2192,7 +2219,11 @@ function initControls() {
       if (!track || track.type !== 'synth') return;
       const value = Number(event.target.value);
       commitSynthConfigUpdate(track, (config) => {
+        if (Number(config.filter[param]) === value) {
+          return false;
+        }
         config.filter[param] = value;
+        return true;
       });
     });
   });
@@ -2204,7 +2235,11 @@ function initControls() {
       if (!track || track.type !== 'synth') return;
       const value = Number(event.target.value);
       commitSynthConfigUpdate(track, (config) => {
+        if (Number(config.envelope[param]) === value) {
+          return false;
+        }
         config.envelope[param] = value;
+        return true;
       });
     });
   });
@@ -2217,12 +2252,18 @@ function initControls() {
         const enabled = event.target.checked;
         commitSynthConfigUpdate(track, (config) => {
           const effectConfig = config.effects[effectKey];
-          if (!effectConfig) return;
+          if (!effectConfig) return false;
+          const previousEnabled = !!effectConfig.enabled;
+          let changed = previousEnabled !== enabled;
           effectConfig.enabled = enabled;
           if (enabled && effectConfig.mix <= 0) {
-            effectConfig.mix =
-              DEFAULT_SYNTH_CONFIG.effects?.[effectKey]?.mix ?? 0.35;
+            const defaultMix = DEFAULT_SYNTH_CONFIG.effects?.[effectKey]?.mix ?? 0.35;
+            if (effectConfig.mix !== defaultMix) {
+              changed = true;
+              effectConfig.mix = defaultMix;
+            }
           }
+          return changed;
         });
       });
     }
@@ -2236,10 +2277,14 @@ function initControls() {
         const value = Number(event.target.value);
         commitSynthConfigUpdate(track, (config) => {
           const effectConfig = config.effects[effectKey];
-          if (!effectConfig) return;
-          if (Number.isFinite(value)) {
-            effectConfig[param] = value;
+          if (!effectConfig || !Number.isFinite(value)) {
+            return false;
           }
+          if (Number(effectConfig[param]) === value) {
+            return false;
+          }
+          effectConfig[param] = value;
+          return true;
         });
       });
     });
