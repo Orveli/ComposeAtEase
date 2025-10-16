@@ -107,6 +107,57 @@ const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).reduce(
   },
   {},
 );
+const imuCubeEl = document.getElementById('imuCube');
+const imuAccChartEl = document.getElementById('imuAccChart');
+const imuRotChartEl = document.getElementById('imuRotChart');
+
+const IMU_ACCEL_SERIES = [
+  {
+    key: 'x',
+    label: 'X',
+    border: 'rgba(248, 113, 113, 0.85)',
+    background: 'rgba(248, 113, 113, 0.15)',
+  },
+  {
+    key: 'y',
+    label: 'Y',
+    border: 'rgba(45, 212, 191, 0.85)',
+    background: 'rgba(45, 212, 191, 0.15)',
+  },
+  {
+    key: 'z',
+    label: 'Z',
+    border: 'rgba(59, 130, 246, 0.85)',
+    background: 'rgba(59, 130, 246, 0.15)',
+  },
+];
+
+const IMU_ROT_SERIES = [
+  {
+    key: 'alpha',
+    label: 'α',
+    border: 'rgba(251, 191, 36, 0.85)',
+    background: 'rgba(251, 191, 36, 0.15)',
+  },
+  {
+    key: 'beta',
+    label: 'β',
+    border: 'rgba(147, 197, 253, 0.85)',
+    background: 'rgba(147, 197, 253, 0.15)',
+  },
+  {
+    key: 'gamma',
+    label: 'γ',
+    border: 'rgba(236, 72, 153, 0.85)',
+    background: 'rgba(236, 72, 153, 0.15)',
+  },
+];
+
+const imuCharts = {
+  acceleration: null,
+  rotation: null,
+  historyLimit: 120,
+};
 
 function getTotalSlots() {
   return state.bars * state.grid;
@@ -925,11 +976,163 @@ function updateImuStatus(message) {
   }
 }
 
+function updateImuOrientationCube(orientation = {}) {
+  if (!imuCubeEl) return;
+  const alpha = Number.isFinite(orientation.alpha) ? orientation.alpha : 0;
+  const beta = Number.isFinite(orientation.beta) ? orientation.beta : 0;
+  const gamma = Number.isFinite(orientation.gamma) ? orientation.gamma : 0;
+  imuCubeEl.style.transform = `rotateZ(${alpha}deg) rotateX(${beta}deg) rotateY(${gamma}deg)`;
+}
+
+function createImuChart(context, series, yTitle) {
+  if (!context || typeof Chart === 'undefined') return null;
+  const datasets = series.map((item) => ({
+    label: item.label,
+    data: [],
+    borderColor: item.border,
+    backgroundColor: item.background,
+    borderWidth: 2,
+    tension: 0.25,
+    pointRadius: 0,
+    fill: false,
+    metaKey: item.key,
+  }));
+
+  return new Chart(context, {
+    type: 'line',
+    data: { labels: [], datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { intersect: false, mode: 'nearest' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(15, 23, 42, 0.9)',
+          borderColor: 'rgba(96, 165, 250, 0.35)',
+          borderWidth: 1,
+          titleColor: '#e2e8f0',
+          bodyColor: '#e2e8f0',
+        },
+      },
+      elements: {
+        line: { borderCapStyle: 'round', borderJoinStyle: 'round' },
+      },
+      layout: { padding: 4 },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Sample',
+            color: 'rgba(148, 197, 253, 0.8)',
+            font: { size: 11, weight: '600' },
+          },
+          ticks: {
+            color: 'rgba(148, 163, 184, 0.85)',
+            maxRotation: 0,
+            autoSkipPadding: 14,
+          },
+          grid: {
+            color: 'rgba(148, 163, 184, 0.12)',
+            drawBorder: false,
+          },
+        },
+        y: {
+          title: {
+            display: true,
+            text: yTitle,
+            color: 'rgba(148, 197, 253, 0.8)',
+            font: { size: 11, weight: '600' },
+          },
+          ticks: {
+            color: '#e2e8f0',
+          },
+          grid: {
+            color: 'rgba(148, 163, 184, 0.12)',
+            drawBorder: false,
+          },
+        },
+      },
+    },
+  });
+}
+
+function setupImuCharts() {
+  if (typeof Chart === 'undefined') return;
+  Chart.defaults.color = '#e2e8f0';
+  Chart.defaults.font.family = "'Manrope', sans-serif";
+  Chart.defaults.font.size = 12;
+
+  if (!imuCharts.acceleration && imuAccChartEl) {
+    const context = imuAccChartEl.getContext('2d');
+    imuCharts.acceleration = createImuChart(context, IMU_ACCEL_SERIES, 'm/s²');
+  }
+  if (!imuCharts.rotation && imuRotChartEl) {
+    const context = imuRotChartEl.getContext('2d');
+    imuCharts.rotation = createImuChart(context, IMU_ROT_SERIES, '°/s');
+  }
+}
+
+function resetImuCharts() {
+  if (imuCharts.acceleration) {
+    imuCharts.acceleration.data.labels.length = 0;
+    imuCharts.acceleration.data.datasets.forEach((dataset) => {
+      dataset.data.length = 0;
+    });
+    imuCharts.acceleration.update('none');
+  }
+  if (imuCharts.rotation) {
+    imuCharts.rotation.data.labels.length = 0;
+    imuCharts.rotation.data.datasets.forEach((dataset) => {
+      dataset.data.length = 0;
+    });
+    imuCharts.rotation.update('none');
+  }
+}
+
+function resetImuVisuals() {
+  resetImuCharts();
+  updateImuOrientationCube({ alpha: 0, beta: 0, gamma: 0 });
+}
+
+function setupImuVisuals() {
+  setupImuCharts();
+  resetImuVisuals();
+}
+
+function pushSampleToChart(chart, sample, label) {
+  if (!chart) return;
+  chart.data.labels.push(label);
+  if (chart.data.labels.length > imuCharts.historyLimit) {
+    chart.data.labels.shift();
+  }
+  chart.data.datasets.forEach((dataset) => {
+    const value = sample && Number.isFinite(sample[dataset.metaKey])
+      ? sample[dataset.metaKey]
+      : 0;
+    dataset.data.push(value);
+    if (dataset.data.length > imuCharts.historyLimit) {
+      dataset.data.shift();
+    }
+  });
+  chart.update('none');
+}
+
+function updateImuChartsData({ acceleration, rotation }) {
+  if (!imuCharts.acceleration || !imuCharts.rotation) return;
+  const label = `${imuState.samples}`;
+  pushSampleToChart(imuCharts.acceleration, acceleration, label);
+  pushSampleToChart(imuCharts.rotation, rotation, label);
+}
+
 function renderImuData() {
   const { acc, accG, rotation, orientation } = imuState.data;
   const avgInterval = imuState.intervalCount
     ? imuState.intervalSum / imuState.intervalCount
     : null;
+
+  updateImuOrientationCube(orientation);
 
   if (imuValueEls['acc-x']) imuValueEls['acc-x'].textContent = formatImuValue(acc.x);
   if (imuValueEls['acc-y']) imuValueEls['acc-y'].textContent = formatImuValue(acc.y);
@@ -953,6 +1156,8 @@ function renderImuData() {
     imuValueEls['rot-beta'].textContent = formatImuValue(rotation.beta, 1);
   if (imuValueEls['rot-gamma'])
     imuValueEls['rot-gamma'].textContent = formatImuValue(rotation.gamma, 1);
+  if (imuValueEls['rot-mag'])
+    imuValueEls['rot-mag'].textContent = formatImuValue(rotation.magnitude, 1);
   if (imuValueEls['rot-peak'])
     imuValueEls['rot-peak'].textContent = formatImuValue(
       imuState.stats.rotationPeak,
@@ -1084,6 +1289,7 @@ async function startImuTracking() {
   };
   imuState.data.interval = null;
   imuState.data.lastTimestamp = null;
+  resetImuVisuals();
   updateImuStatus('Waiting for motion data…');
   renderImuData();
 
@@ -1153,6 +1359,10 @@ function handleDeviceMotion(event) {
   if (imuState.samples === 1) {
     updateImuStatus('Streaming motion data');
   }
+  updateImuChartsData({
+    acceleration: { x: ax, y: ay, z: az },
+    rotation: { alpha: ra, beta: rb, gamma: rg },
+  });
   renderImuData();
 }
 
@@ -1191,6 +1401,7 @@ function handleDeviceOrientation(event) {
 
 function initializeImuPanel() {
   if (!imuToggleBtn || !imuStatusEl) return;
+  setupImuVisuals();
   const supported = 'DeviceMotionEvent' in window || 'DeviceOrientationEvent' in window;
   if (!supported) {
     imuToggleBtn.disabled = true;

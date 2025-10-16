@@ -417,22 +417,32 @@ button.ghost:hover {
   border: 1px solid rgba(148, 163, 184, 0.25);
   color: rgba(224, 242, 254, 0.85);
 }
-
-.imu-grid {
+.imu-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.imu-orientation-card,
+.imu-chart-card {
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: 20px;
+  padding: 20px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  box-shadow: inset 0 0 0 1px rgba(30, 64, 175, 0.2);
+}
+
+.imu-orientation-card {
+  display: flex;
+  flex-direction: column;
   gap: 18px;
 }
 
-.imu-card {
-  background: rgba(15, 23, 42, 0.9);
-  border-radius: 18px;
-  padding: 18px;
-  border: 1px solid rgba(59, 130, 246, 0.25);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  box-shadow: inset 0 0 0 1px rgba(30, 64, 175, 0.25);
+.imu-chart-stack {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
 .imu-card__header h3 {
@@ -444,98 +454,98 @@ button.ghost:hover {
 }
 
 .imu-card__header p {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
   font-size: 0.75rem;
   color: rgba(191, 219, 254, 0.7);
 }
 
-.imu-values {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.imu-values div {
-  background: rgba(30, 41, 59, 0.6);
-  border-radius: 14px;
-  padding: 12px;
-  text-align: center;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
-}
-
-.imu-values span {
-  display: block;
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(148, 197, 253, 0.8);
-}
-
-.imu-values strong {
-  display: block;
-  margin-top: 4px;
-  font-size: 1rem;
-  font-weight: 700;
-  color: #f8fafc;
-}
-
-.imu-metric {
+.imu-scene {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  background: rgba(30, 64, 175, 0.3);
-  border-radius: 14px;
-  padding: 10px 14px;
-  font-size: 0.85rem;
-  letter-spacing: 0.05em;
-  color: #e2e8f0;
+  justify-content: center;
+  perspective: 900px;
 }
 
-.imu-metric.subtle {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px dashed rgba(148, 163, 184, 0.35);
-  color: rgba(226, 232, 240, 0.85);
+.imu-cube {
+  --cube-size: min(200px, 60vw);
+  position: relative;
+  width: var(--cube-size);
+  height: var(--cube-size);
+  transform-style: preserve-3d;
+  transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg);
+  transition: transform 0.25s ease;
 }
 
-.imu-rotation,
-.imu-orientation {
+.imu-face {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 18px;
+  background: linear-gradient(140deg, rgba(15, 23, 42, 0.85), rgba(30, 64, 175, 0.45));
+  border: 1px solid rgba(148, 197, 253, 0.35);
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  place-items: center;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(30, 41, 59, 0.55);
+  backdrop-filter: blur(4px);
 }
 
-.imu-rotation div,
-.imu-orientation div {
+.imu-face--front {
+  transform: translateZ(calc(var(--cube-size) / 2));
+}
+
+.imu-face--back {
+  transform: rotateY(180deg) translateZ(calc(var(--cube-size) / 2));
+}
+
+.imu-face--right {
+  transform: rotateY(90deg) translateZ(calc(var(--cube-size) / 2));
+}
+
+.imu-face--left {
+  transform: rotateY(-90deg) translateZ(calc(var(--cube-size) / 2));
+}
+
+.imu-face--top {
+  transform: rotateX(90deg) translateZ(calc(var(--cube-size) / 2));
+}
+
+.imu-face--bottom {
+  transform: rotateX(-90deg) translateZ(calc(var(--cube-size) / 2));
+}
+
+.imu-orientation-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.imu-orientation-values div {
   background: rgba(30, 41, 59, 0.55);
   border-radius: 14px;
-  padding: 10px;
-  text-align: center;
-  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.18);
+  padding: 12px;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.22);
 }
 
-.imu-orientation {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.imu-orientation span,
-.imu-rotation span {
+.imu-orientation-values span {
   display: block;
   font-size: 0.68rem;
-  text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: rgba(125, 211, 252, 0.75);
+  text-transform: uppercase;
+  color: rgba(148, 197, 253, 0.75);
 }
 
-.imu-orientation strong,
-.imu-rotation strong {
+.imu-orientation-values strong {
   display: block;
-  margin-top: 4px;
-  font-size: 0.95rem;
+  margin-top: 6px;
+  font-size: 1rem;
   color: #f8fafc;
-}
-
-.imu-card--summary {
-  justify-content: space-between;
 }
 
 .imu-summary {
@@ -543,14 +553,15 @@ button.ghost:hover {
   padding: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
+  list-style: none;
 }
 
 .imu-summary div {
-  background: rgba(30, 41, 59, 0.55);
+  background: rgba(15, 23, 42, 0.65);
   border-radius: 14px;
-  padding: 10px;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
+  padding: 12px;
+  box-shadow: inset 0 0 0 1px rgba(30, 64, 175, 0.35);
 }
 
 .imu-summary dt {
@@ -558,12 +569,115 @@ button.ghost:hover {
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: rgba(148, 197, 253, 0.8);
+  color: rgba(148, 197, 253, 0.75);
 }
 
 .imu-summary dd {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   font-size: 0.95rem;
+  color: #f8fafc;
+}
+
+.imu-chart-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.imu-chart-card canvas {
+  width: 100%;
+  height: 220px;
+  background: rgba(15, 23, 42, 0.65);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.18);
+}
+
+.imu-legend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.imu-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: rgba(30, 41, 59, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.25);
+}
+
+.imu-legend__item span {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.imu-legend__item--x {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: rgba(248, 113, 113, 0.9);
+}
+
+.imu-legend__item--y {
+  border-color: rgba(45, 212, 191, 0.5);
+  color: rgba(45, 212, 191, 0.9);
+}
+
+.imu-legend__item--z {
+  border-color: rgba(59, 130, 246, 0.5);
+  color: rgba(59, 130, 246, 0.9);
+}
+
+.imu-legend__item--alpha {
+  border-color: rgba(251, 191, 36, 0.5);
+  color: rgba(251, 191, 36, 0.9);
+}
+
+.imu-legend__item--beta {
+  border-color: rgba(147, 197, 253, 0.5);
+  color: rgba(147, 197, 253, 0.9);
+}
+
+.imu-legend__item--gamma {
+  border-color: rgba(236, 72, 153, 0.5);
+  color: rgba(236, 72, 153, 0.9);
+}
+
+.imu-chart-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.imu-chart-footer div {
+  flex: 1;
+  background: rgba(30, 41, 59, 0.55);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.imu-chart-footer span {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(148, 197, 253, 0.75);
+}
+
+.imu-chart-footer strong {
+  font-size: 1rem;
   color: #f8fafc;
 }
 
@@ -579,6 +693,10 @@ button.ghost:hover {
 
   .panel {
     padding: 20px;
+  }
+
+  .imu-layout {
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   }
 
   .imu-summary {
@@ -603,11 +721,16 @@ button.ghost:hover {
     min-height: 220px;
   }
 
-  .imu-grid {
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  .imu-layout {
+    grid-template-columns: 1fr;
+    gap: 18px;
   }
 
   .imu-summary {
     grid-template-columns: 1fr;
+  }
+
+  .imu-chart-card canvas {
+    height: 200px;
   }
 }
