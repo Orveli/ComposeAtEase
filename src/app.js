@@ -1003,6 +1003,10 @@ async function requestSensorPermission(SensorEvent) {
 }
 
 async function startImuTracking() {
+  if (window.isSecureContext !== true) {
+    updateImuStatus('Enable HTTPS to use motion sensors');
+    return;
+  }
   const motionSupported = 'DeviceMotionEvent' in window;
   const orientationSupported = 'DeviceOrientationEvent' in window;
   if (!motionSupported && !orientationSupported) {
@@ -1119,7 +1123,14 @@ function handleDeviceOrientation(event) {
 
 function initializeImuPanel() {
   if (!imuToggleBtn || !imuStatusEl) return;
+  const secureContext = window.isSecureContext === true;
   const supported = 'DeviceMotionEvent' in window || 'DeviceOrientationEvent' in window;
+  if (!secureContext) {
+    imuToggleBtn.disabled = true;
+    imuToggleBtn.setAttribute('aria-pressed', 'false');
+    updateImuStatus('IMU sensors require a secure (HTTPS) connection');
+    return;
+  }
   if (!supported) {
     imuToggleBtn.disabled = true;
     imuToggleBtn.setAttribute('aria-pressed', 'false');
