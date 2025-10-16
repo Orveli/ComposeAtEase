@@ -1267,34 +1267,71 @@ function handleDrumLanePointerDown(event) {
   const pointerId = event.pointerId;
   const totalSlots = getTotalSlots();
   if (!totalSlots) return;
-  const startBoundary = Math.min(totalSlots - 1, getBoundaryFromEvent(event, drumGridEl));
-  const existing = findDrumNoteAtSlot(track, lane, startBoundary);
-  if (existing) {
-    deleteDrumNote(existing.id, track.id);
-    return;
-  }
+  const startSlot = Math.min(totalSlots - 1, getBoundaryFromEvent(event, drumGridEl));
+  const existing = findDrumNoteAtSlot(track, lane, startSlot);
   event.currentTarget.setPointerCapture(pointerId);
-  const note = {
-    id: crypto.randomUUID(),
-    trackId: track.id,
+  const interaction = {
+    type: 'drum-swipe',
+    mode: existing ? 'erase' : 'paint',
     lane,
-    slot: startBoundary,
-    len: 1,
-  };
-  track.notes.push(note);
-  pointerInteractions.set(pointerId, {
-    type: 'drum-create',
-    notes: [note],
-    startBoundary,
     trackId: track.id,
-  });
+    touchedSlots: new Set([startSlot]),
+    created: [],
+    deleted: [],
+  };
+  if (existing) {
+    const existingIndex = track.notes.indexOf(existing);
+    if (existingIndex >= 0) {
+      const [removed] = track.notes.splice(existingIndex, 1);
+      interaction.deleted.push(removed);
+    }
+  } else {
+    const note = {
+      id: crypto.randomUUID(),
+      trackId: track.id,
+      lane,
+      slot: startSlot,
+      len: 1,
+    };
+    track.notes.push(note);
+    interaction.created.push(note);
+  }
+  pointerInteractions.set(pointerId, interaction);
   renderDrumNotes(track);
 }
 
 function handleDrumLanePointerMove(event) {
   const interaction = pointerInteractions.get(event.pointerId);
-  if (!interaction || interaction.type !== 'drum-create') return;
-  updateCreatedNote(interaction, event, drumGridEl);
+  if (!interaction || interaction.type !== 'drum-swipe') return;
+  const track = getTrackById(interaction.trackId);
+  if (!track) return;
+  const totalSlots = getTotalSlots();
+  if (!totalSlots) return;
+  const slot = Math.min(totalSlots - 1, Math.max(0, getBoundaryFromEvent(event, drumGridEl)));
+  if (interaction.touchedSlots.has(slot)) return;
+  interaction.touchedSlots.add(slot);
+  const existing = findDrumNoteAtSlot(track, interaction.lane, slot);
+  if (interaction.mode === 'paint') {
+    if (!existing) {
+      const note = {
+        id: crypto.randomUUID(),
+        trackId: track.id,
+        lane: interaction.lane,
+        slot,
+        len: 1,
+      };
+      track.notes.push(note);
+      interaction.created.push(note);
+      renderDrumNotes(track);
+    }
+  } else if (existing) {
+    const existingIndex = track.notes.indexOf(existing);
+    if (existingIndex >= 0) {
+      const [removed] = track.notes.splice(existingIndex, 1);
+      interaction.deleted.push(removed);
+      renderDrumNotes(track);
+    }
+  }
 }
 
 function handleDrumLanePointerUp(event) {
@@ -1333,21 +1370,26 @@ function finalizeLaneInteraction(event, cancel = false) {
   if (!interaction) return;
   const track = getTrackById(interaction.trackId);
   if (track) {
-    if (cancel) {
-      interaction.notes.forEach((note) => {
-        if (track.type === 'synth') {
-          deleteMelodyNote(note.id, track.id);
-        } else {
-          deleteDrumNote(note.id, track.id);
-        }
-      });
-    } else {
-      if (track.type === 'synth') {
+    if (interaction.type === 'melody-create') {
+      if (cancel) {
+        interaction.notes.forEach((note) => deleteMelodyNote(note.id, track.id));
+      } else {
         renderSynthNotes(track);
+        rebuildSequences();
+      }
+    } else if (interaction.type === 'drum-swipe') {
+      if (cancel) {
+        if (interaction.mode === 'paint' && interaction.created.length) {
+          const createdIds = new Set(interaction.created.map((note) => note.id));
+          track.notes = track.notes.filter((note) => !createdIds.has(note.id));
+        } else if (interaction.mode === 'erase' && interaction.deleted.length) {
+          track.notes.push(...interaction.deleted);
+        }
+        renderDrumNotes(track);
       } else {
         renderDrumNotes(track);
+        rebuildSequences();
       }
-      rebuildSequences();
     }
   }
   pointerInteractions.delete(pointerId);
