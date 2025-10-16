@@ -1,127 +1,74 @@
-Goal
+# Compose At Ease
 
-Tap-and-loop music toy for mobile. One screen. Text-light. Always in key.
+Compose At Ease is a mobile-friendly tap-and-loop music toy built with vanilla JavaScript and [Tone.js](https://tonejs.github.io/). Draw notes or chords inside a quantised grid, capture 1–4 bar ideas, and loop them immediately.
 
-Core UX
+## Quick start
 
-Horizontal lanes = notes of the chosen scale. Default view shows one octave (6–8 lanes).
+1. Install any static file server (optional). The examples below use [`serve`](https://www.npmjs.com/package/serve):
+   ```bash
+   npm install --global serve
+   ```
+2. Launch the server from the project root:
+   ```bash
+   serve .
+   ```
+3. Open the reported URL (usually `http://localhost:3000`) and start composing.
 
-Strong separators mark octave bounds. Alternating octave backgrounds.
+You can also open `index.html` directly in a modern browser.
 
-Moving playhead with beat and subdivision ticks.
+## Core experience
 
-User draws with two tools: Note and Chord.
+- **Scale lanes:** Each horizontal lane represents one note of the selected scale. Octave boundaries are emphasised with thicker separators and alternating backgrounds.
+- **Playhead & ticks:** A beat-synced playhead sweeps across the grid while beat and subdivision ticks stay anchored to the top bar.
+- **Drawing tools:** Use the bottom toolbar to toggle between the Note and Chord tools, and switch between Tap (1 slot) or Hold (click + drag) length capture modes.
+- **Quantised capture:** On Record, a one-bar count-in precedes recording. Input is quantised to the current grid (1/8 or 1/16) using a tolerance window, ensuring early or late taps land on the nearest slot without sounding ahead of the beat.
+- **Looping:** After 1, 2, or 4 bars (selectable), the Transport continues looping the captured phrase.
 
-Two play styles: Tap (short) and Hold (sustained while pressed).
+## Controls
 
-Smart quantization snaps timing but accepts early/late presses.
+| Area | Control | Description |
+| --- | --- | --- |
+| Top bar | **Settings** | Reveals tempo, scale, root, grid, metronome, and master volume controls. |
+| Grid | **Tap** | Tap to place a note on the nearest grid slot. Long-press a note block to delete it. |
+| Grid | **Hold** | Press and drag in Hold mode. Release snaps to the next grid boundary. |
+| Bottom bar | **Rec** | Starts a one-bar count-in, records for the selected number of bars, then loops. Press again to stop recording early. |
+| Bottom bar | **Bars** | Choose 1, 2, or 4 bar loop lengths. |
+| Bottom bar | **Tool** | Switch between Note and Chord placement. |
+| Bottom bar | **Length** | Toggle Tap (fixed one-slot) or Hold (press + drag). |
+| Bottom bar | **Chord Degree** | Select the diatonic triad (I–vii°) used by the Chord tool. |
+| Left rail | **▲ / ▼** | Scroll the visible octave window up or down. |
 
-Flow
+## Audio engine
 
-Press REC → 1-bar count-in → record 1 / 2 / 4 bars → loop plays.
+- Powered by Tone.js `Transport`, `PolySynth`, and `MembraneSynth` instances.
+- Quantised scheduling uses the transport tick grid. Notes are rendered with a triangle-based polysynth; chord ghost notes briefly layer a softer sine pad.
+- A dedicated metronome channel accents downbeats during count-in and playback, and can be toggled from the settings drawer.
+- Master level can be trimmed between -40 dB and 0 dB.
 
-Tap a lane to place a note at the nearest grid slot.
+## Data model snapshot
 
-In Hold mode, note_off snaps to next grid boundary.
-
-Long-press an existing block to delete.
-
-Controls (bottom bar, icons)
-
-REC.
-
-Bars: 1–2–4.
-
-Tool: Note ↔ Chord.
-
-Length mode: Tap ↔ Hold.
-
-Chord degree: I ii iii IV V vi vii°.
-Hidden top drawer: BPM, scale, root, grid (1/8 or 1/16), volumes.
-
-Quantization (smart)
-
-Grid duration = beatDur * (1/2 or 1/4).
-
-Window: ±40–70 ms around each slot (device-tuned).
-
-For t_in:
-
-Map to nearest slot q = round(t_in / gridDur).
-
-If early but within window → schedule at q.
-
-If late but within window → move back to q.
-
-Hold: on → q_on, off → q_off >= q_on+1, both snapped.
-
-Chords
-
-In Chord tool, a tap places triad of the selected degree in the current octave.
-
-Visual: solid root block + ghost blocks (30–60% opacity, dashed border) for third and fifth; they fill briefly at trigger time.
-
-Octave navigation
-
-Default: one octave visible.
-
-Drag vertically to scroll by whole octaves (snaps to boundaries).
-
-Small ▲/▼ arrows move one octave per tap.
-
-Audio engine spans multiple octaves regardless of view.
-
-Audio (MVP)
-
-WebAudio or native module.
-
-Simple synth or sampler.
-
-Metronome on its own channel.
-
-Polyphony ≥ 8.
-
-Data model (minimal)
+```json
 {
-  "session": { "bpm": 100, "bars": 1, "grid": 8, "root": "C", "scale": "Major" },
+  "session": { "bpm": 100, "bars": 1, "grid": 8, "root": "C", "scale": "major" },
   "notes": [
-    { "laneId": 5, "octave": 4, "slot": 6, "len": 1, "kind": "note" },
-    { "laneId": 3, "octave": 4, "slot": 10, "len": 2, "kind": "chord", "degree": 5 }
+    { "laneDegree": 5, "octave": 4, "slot": 6, "len": 1, "kind": "note" },
+    { "laneDegree": 3, "octave": 4, "slot": 10, "len": 2, "kind": "chord", "degree": 5 }
   ]
 }
+```
 
-Visual language
+## Implementation notes
 
-Alternating octave backgrounds, bold octave borders.
+- The grid is rendered with CSS Grid and responsive styling tuned for tablet/phone widths.
+- Quantisation derives from the transport's PPQ to guarantee alignment with Tone.js scheduling.
+- Playhead motion is animated via `requestAnimationFrame`, sampling transport ticks for smooth sync.
+- Deleting clips relies on long-press detection for touch ergonomics; notes reflash on playback trigger to highlight timing.
 
-Beat ticks tall; subdivision ticks faint.
+## Roadmap ideas
 
-Tap = short bar; Hold = stretched bar.
+- Session persistence and sharing
+- Alternate synth engines and FX routing
+- Swing, humanise, and MIDI export options
+- Multi-track layering and performance recording
 
-Root lane in each octave has a small marker.
-
-UI icons only; tooltips optional later.
-
-Defaults
-
-Note + Tap.
-
-1 bar, 1/8 grid, BPM 100, C major.
-
-Metronome on.
-
-Out-of-scope for MVP
-
-Save/share, effects, swing/humanize, MIDI, multi-tracks.
-
-Acceptance criteria
-
-Recording and looping of 1–4 bars with correct snap and playback.
-
-Early/late taps never sound before the quantized slot, yet are captured.
-
-Hold notes end on the next grid boundary after release.
-
-Chord degree maps to correct triads; ghost notes render and flash on trigger.
-
-Octave scrolling snaps cleanly and does not disrupt timing.
+Enjoy experimenting! 🎶
