@@ -56,7 +56,13 @@ const imuState = {
     acc: { x: 0, y: 0, z: 0, magnitude: 0 },
     accG: { x: 0, y: 0, z: 0, magnitude: 0 },
     rotation: { alpha: 0, beta: 0, gamma: 0, magnitude: 0 },
-    orientation: { alpha: null, beta: null, gamma: null, absolute: false },
+    orientation: {
+      alpha: null,
+      beta: null,
+      gamma: null,
+      absolute: false,
+      headingSource: null,
+    },
     interval: null,
     lastTimestamp: null,
   },
@@ -962,11 +968,14 @@ function renderImuData() {
   if (imuValueEls['ori-absolute']) {
     const orientationAvailable =
       orientation.alpha != null || orientation.beta != null || orientation.gamma != null;
-    imuValueEls['ori-absolute'].textContent = orientationAvailable
-      ? orientation.absolute
-        ? 'Yes'
-        : 'No'
-      : '--';
+    if (orientationAvailable) {
+      const absoluteState = orientation.absolute ? 'Yes' : 'No';
+      imuValueEls['ori-absolute'].textContent = orientation.headingSource
+        ? `${absoluteState} (${orientation.headingSource})`
+        : absoluteState;
+    } else {
+      imuValueEls['ori-absolute'].textContent = '--';
+    }
   }
 
   if (imuValueEls.samples)
@@ -989,13 +998,36 @@ function renderImuData() {
   }
 }
 
-async function requestSensorPermission(SensorEvent) {
-  if (!SensorEvent || typeof SensorEvent.requestPermission !== 'function') {
+async function queryGenericSensorPermissions(names = []) {
+  if (!Array.isArray(names) || names.length === 0) {
+    return true;
+  }
+  if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
     return true;
   }
   try {
+    const results = await Promise.all(
+      names.map((name) => navigator.permissions.query({ name }).catch(() => null)),
+    );
+    return results.every((result) => !result || result.state !== 'denied');
+  } catch (error) {
+    console.warn('Generic sensor permission query failed', error);
+    return true;
+  }
+}
+
+async function requestSensorPermission(SensorEvent, fallbackPermissions = []) {
+  if (!SensorEvent || typeof SensorEvent.requestPermission !== 'function') {
+    return queryGenericSensorPermissions(fallbackPermissions);
+  }
+  try {
     const response = await SensorEvent.requestPermission();
-    return response === 'granted';
+    if (response === 'granted') return true;
+    if (response === 'prompt') {
+      // Some browsers report "prompt" until the user responds – treat as success so listeners run.
+      return true;
+    }
+    return false;
   } catch (error) {
     console.error('Failed to request sensor permission', error);
     return false;
@@ -1016,12 +1048,19 @@ async function startImuTracking() {
     return;
   }
 
-  const motionGranted = await requestSensorPermission(window.DeviceMotionEvent);
+  updateImuStatus('Requesting sensor access…');
+
+  const motionGranted = await requestSensorPermission(window.DeviceMotionEvent, [
+    'accelerometer',
+    'gyroscope',
+  ]);
   if (!motionGranted) {
     updateImuStatus('Motion sensor permission denied');
     return;
   }
-  const orientationGranted = await requestSensorPermission(window.DeviceOrientationEvent);
+  const orientationGranted = await requestSensorPermission(window.DeviceOrientationEvent, [
+    'magnetometer',
+  ]);
   if (!orientationGranted) {
     updateImuStatus('Orientation sensor permission denied');
     return;
@@ -1036,7 +1075,13 @@ async function startImuTracking() {
   imuState.data.acc = { x: 0, y: 0, z: 0, magnitude: 0 };
   imuState.data.accG = { x: 0, y: 0, z: 0, magnitude: 0 };
   imuState.data.rotation = { alpha: 0, beta: 0, gamma: 0, magnitude: 0 };
-  imuState.data.orientation = { alpha: null, beta: null, gamma: null, absolute: false };
+  imuState.data.orientation = {
+    alpha: null,
+    beta: null,
+    gamma: null,
+    absolute: false,
+    headingSource: null,
+  };
   imuState.data.interval = null;
   imuState.data.lastTimestamp = null;
   updateImuStatus('Waiting for motion data…');
@@ -1044,6 +1089,7 @@ async function startImuTracking() {
 
   window.addEventListener('devicemotion', handleDeviceMotion);
   window.addEventListener('deviceorientation', handleDeviceOrientation);
+  window.addEventListener('deviceorientationabsolute', handleDeviceOrientation);
   if (imuToggleBtn) {
     imuToggleBtn.textContent = 'Stop Tracking';
     imuToggleBtn.setAttribute('aria-pressed', 'true');
@@ -1055,6 +1101,7 @@ function stopImuTracking() {
   imuState.active = false;
   window.removeEventListener('devicemotion', handleDeviceMotion);
   window.removeEventListener('deviceorientation', handleDeviceOrientation);
+  window.removeEventListener('deviceorientationabsolute', handleDeviceOrientation);
   updateImuStatus('Tracking paused');
   if (imuToggleBtn) {
     imuToggleBtn.textContent = 'Start Tracking';
@@ -1109,16 +1156,35 @@ function handleDeviceMotion(event) {
   renderImuData();
 }
 
+function normalizeHeadingFromEvent(event) {
+  if (typeof event.webkitCompassHeading === 'number') {
+    // webkitCompassHeading reports clockwise degrees starting at North.
+    return (360 - event.webkitCompassHeading) % 360;
+  }
+  return typeof event.alpha === 'number' ? event.alpha : null;
+}
+
+function resolveOrientationAbsolute(event) {
+  if (typeof event.webkitCompassAccuracy === 'number') {
+    return event.webkitCompassAccuracy >= 0;
+  }
+  if (typeof event.absolute === 'boolean') {
+    return event.absolute;
+  }
+  return false;
+}
+
 function handleDeviceOrientation(event) {
   if (!imuState.active) return;
-  const alpha = typeof event.alpha === 'number' ? event.alpha : null;
+  const alpha = normalizeHeadingFromEvent(event);
   const beta = typeof event.beta === 'number' ? event.beta : null;
   const gamma = typeof event.gamma === 'number' ? event.gamma : null;
   imuState.data.orientation = {
     alpha,
     beta,
     gamma,
-    absolute: Boolean(event.absolute),
+    absolute: resolveOrientationAbsolute(event),
+    headingSource: typeof event.webkitCompassHeading === 'number' ? 'compass' : null,
   };
   renderImuData();
 }
@@ -1134,7 +1200,7 @@ function initializeImuPanel() {
   }
   imuToggleBtn.addEventListener('click', toggleImuTracking);
   imuToggleBtn.setAttribute('aria-pressed', 'false');
-  updateImuStatus('Awaiting permission');
+  updateImuStatus('Tap “Start Tracking” to enable sensors');
   renderImuData();
 }
 
