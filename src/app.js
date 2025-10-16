@@ -251,7 +251,6 @@ const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).reduce(
 );
 const imuCubeEl = document.getElementById('imuCube');
 const imuCombinedChartEl = document.getElementById('imuAllChart');
-const chartJsScriptEl = document.querySelector('script[data-chartjs]');
 
 const IMU_SERIES = [
   {
@@ -319,13 +318,59 @@ const IMU_SERIES = [
   },
 ];
 
-const imuCharts = {
-  combined: null,
-  historyLimit: 120,
-};
+const IMU_AXES = [
+  {
+    id: 'orientation',
+    label: 'Orientation (°)',
+    min: -200,
+    max: 360,
+    zero: 0,
+    labelColor: 'rgba(251, 191, 36, 0.85)',
+    background: 'rgba(30, 41, 59, 0.35)',
+    gridColor: 'rgba(148, 163, 184, 0.18)',
+    zeroLine: 'rgba(251, 191, 36, 0.45)',
+  },
+  {
+    id: 'acceleration',
+    label: 'Linear acceleration (m/s²)',
+    min: -20,
+    max: 20,
+    zero: 0,
+    labelColor: 'rgba(45, 212, 191, 0.85)',
+    background: 'rgba(15, 118, 110, 0.18)',
+    gridColor: 'rgba(45, 212, 191, 0.14)',
+    zeroLine: 'rgba(45, 212, 191, 0.4)',
+  },
+  {
+    id: 'rotation',
+    label: 'Rotation rate (°/s)',
+    min: -720,
+    max: 720,
+    zero: 0,
+    labelColor: 'rgba(129, 140, 248, 0.85)',
+    background: 'rgba(67, 56, 202, 0.18)',
+    gridColor: 'rgba(129, 140, 248, 0.14)',
+    zeroLine: 'rgba(129, 140, 248, 0.4)',
+  },
+];
 
-let chartDefaultsApplied = false;
-let chartLoadListenerAttached = false;
+const imuPlotter = {
+  canvas: imuCombinedChartEl,
+  ctx: null,
+  width: 0,
+  height: 0,
+  pixelRatio: 1,
+  historyLimit: 120,
+  labels: [],
+  series: IMU_SERIES.map((item) => ({
+    key: item.key,
+    label: item.label,
+    color: item.border,
+    fill: item.background,
+    axisId: item.axisId,
+    data: [],
+  })),
+};
 
 function getTotalSlots() {
   return state.bars * state.grid;
@@ -1615,177 +1660,249 @@ function updateImuOrientationCube(orientation = {}) {
   imuCubeEl.style.transform = `rotateZ(${alpha}deg) rotateX(${beta}deg) rotateY(${gamma}deg)`;
 }
 
-function createImuCombinedChart(context, chartLib = window.Chart) {
-  if (!context || !chartLib) return null;
-  const datasets = IMU_SERIES.map((item) => ({
-    label: item.label,
-    data: [],
-    borderColor: item.border,
-    backgroundColor: item.background,
-    borderWidth: 2,
-    tension: 0.25,
-    pointRadius: 0,
-    fill: false,
-    metaKey: item.key,
-    yAxisID: item.axisId,
-  }));
+function getImuAxisById(id) {
+  return IMU_AXES.find((axis) => axis.id === id) || null;
+}
 
-  return new chartLib(context, {
-    type: 'line',
-    data: { labels: [], datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      interaction: { intersect: false, mode: 'nearest' },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: 'rgba(15, 23, 42, 0.9)',
-          borderColor: 'rgba(96, 165, 250, 0.35)',
-          borderWidth: 1,
-          titleColor: '#e2e8f0',
-          bodyColor: '#e2e8f0',
-        },
-      },
-      elements: {
-        line: { borderCapStyle: 'round', borderJoinStyle: 'round' },
-      },
-      layout: { padding: 4 },
-      scales: {
-        x: {
-          title: {
-            display: true,
-            text: 'Sample',
-            color: 'rgba(148, 197, 253, 0.8)',
-            font: { size: 11, weight: '600' },
-          },
-          ticks: {
-            color: 'rgba(148, 163, 184, 0.85)',
-            maxRotation: 0,
-            autoSkipPadding: 14,
-          },
-          grid: {
-            color: 'rgba(148, 163, 184, 0.12)',
-            drawBorder: false,
-          },
-        },
-        orientation: {
-          position: 'left',
-          title: {
-            display: true,
-            text: 'Orientation (°)',
-            color: 'rgba(251, 191, 36, 0.85)',
-            font: { size: 11, weight: '600' },
-          },
-          ticks: {
-            color: 'rgba(254, 249, 195, 0.85)',
-          },
-          suggestedMin: -200,
-          suggestedMax: 360,
-          grid: {
-            color: 'rgba(148, 163, 184, 0.12)',
-            drawBorder: false,
-          },
-        },
-        acceleration: {
-          position: 'right',
-          title: {
-            display: true,
-            text: 'Linear acceleration (m/s²)',
-            color: 'rgba(45, 212, 191, 0.85)',
-            font: { size: 11, weight: '600' },
-          },
-          ticks: {
-            color: 'rgba(190, 242, 255, 0.8)',
-          },
-          suggestedMin: -20,
-          suggestedMax: 20,
-          grid: {
-            drawOnChartArea: false,
-            drawBorder: false,
-          },
-        },
-        rotation: {
-          position: 'right',
-          offset: true,
-          title: {
-            display: true,
-            text: 'Rotation rate (°/s)',
-            color: 'rgba(129, 140, 248, 0.85)',
-            font: { size: 11, weight: '600' },
-          },
-          ticks: {
-            color: 'rgba(199, 210, 254, 0.82)',
-          },
-          suggestedMin: -720,
-          suggestedMax: 720,
-          grid: {
-            drawOnChartArea: false,
-            drawBorder: false,
-          },
-        },
-      },
-    },
+function mapImuValueToY(value, axis, top, height) {
+  if (!axis || height <= 0) {
+    return top + height / 2;
+  }
+  const min = axis.min;
+  const max = axis.max;
+  if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max)) {
+    return top + height / 2;
+  }
+  if (min === max) {
+    return top + height / 2;
+  }
+  const clamped = Math.max(min, Math.min(max, value));
+  const ratio = (clamped - min) / (max - min);
+  return top + height - ratio * height;
+}
+
+function ensureImuPlotter() {
+  if (!imuPlotter.canvas) {
+    return false;
+  }
+  if (!imuPlotter.ctx) {
+    const context = imuPlotter.canvas.getContext('2d');
+    if (!context) {
+      return false;
+    }
+    imuPlotter.ctx = context;
+  }
+  if (!imuPlotter.series || imuPlotter.series.length !== IMU_SERIES.length) {
+    imuPlotter.series = IMU_SERIES.map((item) => ({
+      key: item.key,
+      label: item.label,
+      color: item.border,
+      fill: item.background,
+      axisId: item.axisId,
+      data: [],
+    }));
+  }
+  return true;
+}
+
+function resizeImuPlotterCanvas() {
+  if (!ensureImuPlotter()) return;
+  const { canvas, ctx } = imuPlotter;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) {
+    return;
+  }
+  const ratio = window.devicePixelRatio || 1;
+  imuPlotter.pixelRatio = ratio;
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  canvas.style.width = `${rect.width}px`;
+  canvas.style.height = `${rect.height}px`;
+  imuPlotter.width = rect.width;
+  imuPlotter.height = rect.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(ratio, ratio);
+}
+
+function clearImuPlotterData() {
+  imuPlotter.labels.length = 0;
+  if (imuPlotter.series) {
+    imuPlotter.series.forEach((series) => {
+      series.data.length = 0;
+    });
+  }
+}
+
+function drawImuPlotter() {
+  if (!ensureImuPlotter()) return;
+  if (!imuPlotter.width || !imuPlotter.height) {
+    resizeImuPlotterCanvas();
+    if (!imuPlotter.width || !imuPlotter.height) {
+      return;
+    }
+  }
+
+  const { ctx, width, height } = imuPlotter;
+  ctx.clearRect(0, 0, width, height);
+
+  const leftPadding = 110;
+  const labelColumnX = 18;
+  const rightPadding = 28;
+  const topPadding = 20;
+  const bottomPadding = 28;
+  const axisGap = 24;
+  const axes = IMU_AXES;
+  const axisCount = axes.length;
+  const availableHeight = Math.max(
+    0,
+    height - topPadding - bottomPadding - axisGap * Math.max(0, axisCount - 1),
+  );
+  const axisHeight = axisCount > 0 ? availableHeight / axisCount : 0;
+  const plotWidth = Math.max(0, width - leftPadding - rightPadding);
+  const dataLength = imuPlotter.labels.length;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  axes.forEach((axis, index) => {
+    const top = topPadding + index * (axisHeight + axisGap);
+    const bottom = top + axisHeight;
+    if (axisHeight <= 0) {
+      return;
+    }
+
+    if (axis.background) {
+      ctx.fillStyle = axis.background;
+      ctx.fillRect(leftPadding - 16, top, plotWidth + 32, axisHeight);
+    }
+
+    // Grid lines
+    if (axis.gridColor) {
+      ctx.strokeStyle = axis.gridColor;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 8]);
+      const divisions = 4;
+      for (let i = 1; i < divisions; i += 1) {
+        const y = top + (axisHeight / divisions) * i;
+        ctx.beginPath();
+        ctx.moveTo(leftPadding, y);
+        ctx.lineTo(leftPadding + plotWidth, y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+
+    if (
+      axis.zero != null &&
+      Number.isFinite(axis.zero) &&
+      axis.zero >= axis.min &&
+      axis.zero <= axis.max
+    ) {
+      const zeroY = mapImuValueToY(axis.zero, axis, top, axisHeight);
+      ctx.strokeStyle = axis.zeroLine || 'rgba(148, 163, 184, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(leftPadding, zeroY);
+      ctx.lineTo(leftPadding + plotWidth, zeroY);
+      ctx.stroke();
+    }
+
+    ctx.font = "600 12px 'Manrope', sans-serif";
+    ctx.fillStyle = axis.labelColor || 'rgba(226, 232, 240, 0.85)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(axis.label, labelColumnX, top);
+
+    ctx.font = "500 11px 'Manrope', sans-serif";
+    ctx.fillStyle = 'rgba(148, 163, 184, 0.75)';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`${axis.max}`, labelColumnX, top + 18);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`${axis.min}`, labelColumnX, bottom - 4);
+
+    const axisSeries = imuPlotter.series.filter((series) => series.axisId === axis.id);
+
+    axisSeries.forEach((series) => {
+      if (!dataLength) return;
+      ctx.strokeStyle = series.color;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      let hasPoint = false;
+      for (let i = 0; i < dataLength; i += 1) {
+        const value = series.data[i];
+        if (!Number.isFinite(value)) {
+          hasPoint = false;
+          continue;
+        }
+        const x =
+          dataLength === 1
+            ? leftPadding
+            : leftPadding + (plotWidth * i) / (dataLength - 1);
+        const y = mapImuValueToY(value, axis, top, axisHeight);
+        if (!hasPoint) {
+          ctx.moveTo(x, y);
+          hasPoint = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+      if (hasPoint) {
+        ctx.stroke();
+      }
+
+      const lastValue = series.data[dataLength - 1];
+      if (Number.isFinite(lastValue)) {
+        const lastX =
+          dataLength <= 1
+            ? leftPadding
+            : leftPadding + (plotWidth * (dataLength - 1)) / (dataLength - 1);
+        const lastY = mapImuValueToY(lastValue, axis, top, axisHeight);
+        ctx.fillStyle = series.color;
+        ctx.beginPath();
+        ctx.arc(lastX, lastY, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+
+    if (index === axisCount - 1 && dataLength) {
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.75)';
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+      ctx.fillText(imuPlotter.labels[0], leftPadding, bottom + 6);
+      if (dataLength > 2) {
+        ctx.textAlign = 'center';
+        const midIndex = Math.floor((dataLength - 1) / 2);
+        const midX =
+          dataLength === 1
+            ? leftPadding
+            : leftPadding + (plotWidth * midIndex) / (dataLength - 1);
+        ctx.fillText(imuPlotter.labels[midIndex], midX, bottom + 6);
+      }
+      ctx.textAlign = 'right';
+      ctx.fillText(
+        imuPlotter.labels[dataLength - 1],
+        leftPadding + plotWidth,
+        bottom + 6,
+      );
+      ctx.textAlign = 'left';
+    }
   });
+
+  ctx.restore();
 }
 
 function setupImuCharts() {
-  const chartLib = window.Chart;
-  if (!chartLib) {
-    if (chartJsScriptEl && !chartLoadListenerAttached) {
-      chartLoadListenerAttached = true;
-      chartJsScriptEl.addEventListener(
-        'load',
-        () => {
-          chartLoadListenerAttached = false;
-          setupImuCharts();
-          renderImuData();
-        },
-        { once: true },
-      );
-      chartJsScriptEl.addEventListener(
-        'error',
-        () => {
-          chartLoadListenerAttached = false;
-          updateImuStatus('Live chart unavailable (failed to load Chart.js)');
-        },
-        { once: true },
-      );
-    }
+  if (!ensureImuPlotter()) {
     return;
   }
-
-  if (!chartDefaultsApplied) {
-    chartLib.defaults.color = '#e2e8f0';
-    chartLib.defaults.font.family = "'Manrope', sans-serif";
-    chartLib.defaults.font.size = 12;
-    chartDefaultsApplied = true;
-  }
-
-  if (!imuCharts.combined && imuCombinedChartEl) {
-    const context = imuCombinedChartEl.getContext('2d');
-    if (context) {
-      imuCharts.combined = createImuCombinedChart(context, chartLib);
-      if (imuState.active && imuState.samples > 0) {
-        updateImuChartsData({
-          acceleration: imuState.data.acc,
-          rotation: imuState.data.rotation,
-          orientation: imuState.data.orientation,
-        });
-      }
-    }
-  }
+  resizeImuPlotterCanvas();
+  drawImuPlotter();
 }
 
 function resetImuCharts() {
-  if (imuCharts.combined) {
-    imuCharts.combined.data.labels.length = 0;
-    imuCharts.combined.data.datasets.forEach((dataset) => {
-      dataset.data.length = 0;
-    });
-    imuCharts.combined.update('none');
-  }
+  clearImuPlotterData();
+  drawImuPlotter();
 }
 
 function resetImuVisuals() {
@@ -1798,28 +1915,25 @@ function setupImuVisuals() {
   resetImuVisuals();
 }
 
-function pushSampleToChart(chart, sample, label) {
-  if (!chart) return;
-  chart.data.labels.push(label);
-  if (chart.data.labels.length > imuCharts.historyLimit) {
-    chart.data.labels.shift();
+function pushSampleToPlotter(sample, label) {
+  if (!ensureImuPlotter()) return;
+  imuPlotter.labels.push(label);
+  if (imuPlotter.labels.length > imuPlotter.historyLimit) {
+    imuPlotter.labels.shift();
   }
-  chart.data.datasets.forEach((dataset) => {
-    const rawValue = sample ? sample[dataset.metaKey] : null;
+  imuPlotter.series.forEach((series) => {
+    const rawValue = sample ? sample[series.key] : null;
     const value = Number.isFinite(rawValue) ? rawValue : null;
-    dataset.data.push(value);
-    if (dataset.data.length > imuCharts.historyLimit) {
-      dataset.data.shift();
+    series.data.push(value);
+    if (series.data.length > imuPlotter.historyLimit) {
+      series.data.shift();
     }
   });
-  chart.update('none');
+  drawImuPlotter();
 }
 
 function updateImuChartsData({ acceleration, rotation, orientation }) {
-  if (!imuCharts.combined) {
-    setupImuCharts();
-  }
-  if (!imuCharts.combined) return;
+  if (!ensureImuPlotter()) return;
   const label = `${imuState.samples}`;
   const sample = {
     heading:
@@ -1835,7 +1949,7 @@ function updateImuChartsData({ acceleration, rotation, orientation }) {
     rotBeta: rotation && Number.isFinite(rotation.beta) ? rotation.beta : null,
     rotGamma: rotation && Number.isFinite(rotation.gamma) ? rotation.gamma : null,
   };
-  pushSampleToChart(imuCharts.combined, sample, label);
+  pushSampleToPlotter(sample, label);
 }
 
 function renderImuData() {
@@ -2441,12 +2555,15 @@ init();
 
 window.addEventListener('resize', () => {
   const track = getActiveTrack();
-  if (!track) return;
-  if (track.type === 'synth') {
-    renderSynthNotes(track);
-    renderMelodyTicks();
-  } else {
-    renderDrumNotes(track);
-    renderDrumTicks();
+  if (track) {
+    if (track.type === 'synth') {
+      renderSynthNotes(track);
+      renderMelodyTicks();
+    } else {
+      renderDrumNotes(track);
+      renderDrumTicks();
+    }
   }
+  resizeImuPlotterCanvas();
+  drawImuPlotter();
 });
