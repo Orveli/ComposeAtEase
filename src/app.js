@@ -3,633 +3,709 @@ const SCALE_INTERVALS = {
   Minor: [0, 2, 3, 5, 7, 8, 10],
 };
 
-const DEGREE_SEQUENCE = ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'];
+const DRUM_LANES = [
+  { id: 'kick', label: 'Kick' },
+  { id: 'snare', label: 'Snare' },
+  { id: 'hat', label: 'Hi-Hat' },
+];
 
 const state = {
-  session: {
-    bpm: 100,
-    bars: 1,
-    grid: 8,
-    root: 'C',
-    scale: 'Major',
-  },
-  tool: 'note',
-  lengthMode: 'tap',
-  chordIndex: 0,
+  bpm: 100,
+  bars: 1,
+  grid: 8,
+  root: 'C',
+  scale: 'Major',
   visibleOctave: 4,
-  notes: [],
-  recording: false,
+  melodyNotes: [],
+  drumNotes: [],
   playing: false,
-  pendingHold: new Map(),
-  part: null,
-  recordEnabled: true,
+  melodyPart: null,
+  drumPart: null,
+  playheadRaf: null,
 };
 
-const gridEl = document.getElementById('grid');
-const lanesEl = document.getElementById('lanes');
-const ticksEl = document.getElementById('ticks');
-const playheadEl = document.getElementById('playhead');
-const recBtn = document.getElementById('recBtn');
-const barsBtn = document.getElementById('barsBtn');
-const toolBtn = document.getElementById('toolBtn');
-const lengthBtn = document.getElementById('lengthBtn');
-const degreeBtn = document.getElementById('degreeBtn');
-const octaveUpBtn = document.getElementById('octaveUp');
-const octaveDownBtn = document.getElementById('octaveDown');
-const octaveLabel = document.getElementById('octaveLabel');
-const drawerToggle = document.getElementById('drawerToggle');
-const drawer = document.getElementById('drawer');
+const pointerInteractions = new Map();
+
+const melodyGridEl = document.getElementById('melodyGrid');
+const melodyLanesEl = document.getElementById('melodyLanes');
+const melodyTicksEl = document.getElementById('melodyTicks');
+const melodyPlayheadEl = document.getElementById('melodyPlayhead');
+
+const drumGridEl = document.getElementById('drumGrid');
+const drumLanesEl = document.getElementById('drumLanes');
+const drumTicksEl = document.getElementById('drumTicks');
+const drumPlayheadEl = document.getElementById('drumPlayhead');
+
+const playBtn = document.getElementById('playBtn');
+const stopBtn = document.getElementById('stopBtn');
+const gridSelect = document.getElementById('gridSelect');
 const bpmInput = document.getElementById('bpm');
 const bpmValue = document.getElementById('bpmValue');
 const scaleSelect = document.getElementById('scaleSelect');
 const rootSelect = document.getElementById('rootSelect');
-const gridSelect = document.getElementById('gridSelect');
 const masterVolumeInput = document.getElementById('masterVolume');
-const metronomeVolumeInput = document.getElementById('metronomeVolume');
+const octaveLabel = document.getElementById('octaveLabel');
+const octaveUpBtn = document.getElementById('octaveUp');
+const octaveDownBtn = document.getElementById('octaveDown');
 
 const masterVolume = new Tone.Volume(-8).toDestination();
-const synth = new Tone.PolySynth(Tone.Synth, {
+const melodySynth = new Tone.PolySynth(Tone.Synth, {
   maxPolyphony: 16,
   oscillator: { type: 'triangle' },
   envelope: { attack: 0.01, release: 0.2 },
 }).connect(masterVolume);
 
-const metronomeVolume = new Tone.Volume(-16).connect(masterVolume);
-const metronomeSynth = new Tone.MembraneSynth({
-  envelope: { attack: 0.001, decay: 0.05, sustain: 0.001, release: 0.01 },
-  pitchDecay: 0.02,
-}).connect(metronomeVolume);
+const drumSynths = {
+  kick: new Tone.MembraneSynth({ envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 } }).connect(masterVolume),
+  snare: new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.15 },
+  }).connect(masterVolume),
+  hat: new Tone.MetalSynth({
+    frequency: 400,
+    envelope: { attack: 0.001, decay: 0.1, release: 0.05 },
+    harmonicity: 5.1,
+    modulationIndex: 32,
+    resonance: 4000,
+  }).connect(masterVolume),
+};
 
-const EARLY_WINDOW = 0.07;
-const LATE_WINDOW = 0.07;
-let countdownEl = null;
-let metronomeEventId = null;
-let rafId = null;
-let countdownIntervalId = null;
-
-function getScaleIntervals() {
-  return SCALE_INTERVALS[state.session.scale] || SCALE_INTERVALS.Major;
+function getTotalSlots() {
+  return state.bars * state.grid;
 }
 
 function getGridDurationSeconds() {
   const beatDur = Tone.Time('4n').toSeconds();
-  return beatDur * (4 / state.session.grid);
+  return beatDur * (4 / state.grid);
 }
 
 function getLoopDurationSeconds() {
-  return Tone.Time(`${state.session.bars}m`).toSeconds();
+  return Tone.Time(`${state.bars}m`).toSeconds();
 }
 
-function getVisibleLanes() {
-  const intervals = getScaleIntervals();
-  const baseMidi = Tone.Frequency(`${state.session.root}${state.visibleOctave}`).toMidi();
-  const lanes = intervals.map((interval, idx) => ({
-    laneId: idx,
-    midi: baseMidi + interval,
-    name: Tone.Frequency(baseMidi + interval, 'midi').toNote(),
-    isRoot: interval === 0,
-  }));
-  // highest lane on top
-  return lanes.sort((a, b) => b.midi - a.midi);
+function getMelodyLanes() {
+  const intervals = SCALE_INTERVALS[state.scale] || SCALE_INTERVALS.Major;
+  const baseMidi = Tone.Frequency(`${state.root}${state.visibleOctave}`).toMidi();
+  return intervals
+    .map((interval, index) => {
+      const midi = baseMidi + interval;
+      return {
+        laneIndex: index,
+        interval,
+        midi,
+        name: Tone.Frequency(midi, 'midi').toNote(),
+        isRoot: interval === 0,
+      };
+    })
+    .sort((a, b) => b.midi - a.midi);
 }
 
-function renderLanes() {
-  lanesEl.innerHTML = '';
-  const lanes = getVisibleLanes();
-  lanes.forEach((lane) => {
+function getMidiForLane(laneIndex, octave) {
+  const intervals = SCALE_INTERVALS[state.scale] || SCALE_INTERVALS.Major;
+  const interval = intervals[laneIndex] ?? intervals[0] ?? 0;
+  const baseMidi = Tone.Frequency(`${state.root}${octave}`).toMidi();
+  return baseMidi + interval;
+}
+
+function normalizeNotesForGrid() {
+  const totalSlots = getTotalSlots();
+  state.melodyNotes.forEach((note) => {
+    note.slot = Math.max(0, Math.min(note.slot, Math.max(0, totalSlots - 1)));
+    note.len = Math.max(1, Math.min(note.len, totalSlots - note.slot));
+  });
+  state.drumNotes.forEach((note) => {
+    note.slot = Math.max(0, Math.min(note.slot, Math.max(0, totalSlots - 1)));
+    note.len = Math.max(1, Math.min(note.len, totalSlots - note.slot));
+  });
+}
+
+function normalizeMelodyLaneIndices() {
+  const intervals = SCALE_INTERVALS[state.scale] || SCALE_INTERVALS.Major;
+  const maxIndex = Math.max(0, intervals.length - 1);
+  state.melodyNotes.forEach((note) => {
+    note.laneIndex = Math.max(0, Math.min(note.laneIndex, maxIndex));
+  });
+}
+
+function renderMelodyLanes() {
+  normalizeMelodyLaneIndices();
+  const lanes = getMelodyLanes();
+  melodyLanesEl.innerHTML = '';
+  melodyLanesEl.style.gridTemplateRows = `repeat(${lanes.length}, 1fr)`;
+  lanes.forEach((lane, index) => {
     const laneEl = document.createElement('div');
     laneEl.className = 'lane';
-    laneEl.dataset.lane = lane.laneId;
     if (lane.isRoot) {
       laneEl.classList.add('root');
     }
+    laneEl.dataset.laneIndex = lane.laneIndex;
     const label = document.createElement('strong');
     label.textContent = lane.name;
     laneEl.appendChild(label);
-    laneEl.addEventListener('pointerdown', handleLanePointerDown);
-    laneEl.addEventListener('pointerup', handleLanePointerUp);
-    laneEl.addEventListener('pointercancel', cancelHold);
-    laneEl.addEventListener('pointerleave', handleLanePointerLeave);
-    lanesEl.appendChild(laneEl);
+    laneEl.addEventListener('pointerdown', handleMelodyLanePointerDown);
+    laneEl.addEventListener('pointermove', handleMelodyLanePointerMove);
+    laneEl.addEventListener('pointerup', handleMelodyLanePointerUp);
+    laneEl.addEventListener('pointercancel', handleMelodyLanePointerCancel);
+    melodyLanesEl.appendChild(laneEl);
   });
-  renderNotes();
-  renderTicks();
+  renderMelodyNotes();
+  renderMelodyTicks();
 }
 
-function renderNotes() {
-  const gridWidth = gridEl.clientWidth || gridEl.offsetWidth;
-  const totalSlots = state.session.bars * (state.session.grid / 4) * 4;
-  const slotWidth = gridWidth / totalSlots;
-  const laneElements = Array.from(lanesEl.children);
-  laneElements.forEach((laneEl) => {
+function renderMelodyNotes() {
+  const lanes = Array.from(melodyLanesEl.children);
+  const totalSlots = getTotalSlots();
+  const gridWidth = melodyGridEl.clientWidth || melodyGridEl.offsetWidth;
+  const slotWidth = totalSlots > 0 ? gridWidth / totalSlots : 0;
+  lanes.forEach((laneEl) => {
     Array.from(laneEl.querySelectorAll('.note-block')).forEach((child) => child.remove());
   });
-  state.notes.forEach((note) => {
-    if (note.octave !== state.visibleOctave) return;
-    const laneEl = laneElements.find((el) => Number(el.dataset.lane) === note.laneId);
+  const laneData = getMelodyLanes();
+  state.melodyNotes.forEach((note) => {
+    const laneInfoIndex = laneData.findIndex((lane) => lane.laneIndex === note.laneIndex);
+    if (laneInfoIndex < 0) return;
+    const laneEl = lanes[laneInfoIndex];
     if (!laneEl) return;
     const block = document.createElement('div');
     block.className = 'note-block';
     block.dataset.id = note.id;
+    block.dataset.type = 'melody';
+    block.textContent = laneData[laneInfoIndex].name;
     const left = note.slot * slotWidth;
-    const width = Math.max(slotWidth * note.len, slotWidth * 0.8);
     block.style.left = `${left}px`;
-    block.style.width = `${width}px`;
-    block.style.top = '12px';
-    block.style.bottom = '12px';
-    block.textContent = note.kind === 'chord' ? note.degree : '';
+    block.style.width = `${Math.max(slotWidth * note.len, slotWidth * 0.8)}px`;
     laneEl.appendChild(block);
-    setupBlockInteractions(block, note);
 
-    if (note.kind === 'chord') {
-      block.classList.add('chord-root');
-      renderGhostNotes(note, left, width);
-    }
+    const handle = document.createElement('div');
+    handle.className = 'resize-handle';
+    block.appendChild(handle);
+
+    block.addEventListener('pointerdown', (event) => startMelodyDrag(event, note));
+    block.addEventListener('pointermove', handleMelodyBlockPointerMove);
+    block.addEventListener('pointerup', endBlockInteraction);
+    block.addEventListener('pointercancel', endBlockInteraction);
+    block.addEventListener('dblclick', () => deleteMelodyNote(note.id));
+
+    handle.addEventListener('pointerdown', (event) => startMelodyResize(event, note));
+    handle.addEventListener('pointermove', handleMelodyResizeMove);
+    handle.addEventListener('pointerup', endBlockInteraction);
+    handle.addEventListener('pointercancel', endBlockInteraction);
   });
 }
 
-function renderGhostNotes(note, left, width) {
-  const chordNotes = getChordMidis(note.degree, note.octave);
-  chordNotes.slice(1).forEach((midi) => {
-    const lane = findLaneForMidi(midi);
-    if (!lane) return;
-    const laneElement = lanesEl.querySelector(`.lane[data-lane="${lane.laneId}"]`);
-    if (!laneElement) return;
-    const ghost = document.createElement('div');
-    ghost.className = 'note-block ghost';
-    ghost.dataset.parent = note.id;
-    ghost.style.left = `${left}px`;
-    ghost.style.width = `${width}px`;
-    ghost.style.top = '12px';
-    ghost.style.bottom = '12px';
-    laneElement.appendChild(ghost);
-  });
-}
-
-function findLaneForMidi(midi) {
-  const intervals = getScaleIntervals();
-  const baseMidi = Tone.Frequency(`${state.session.root}${state.visibleOctave}`).toMidi();
-  for (let i = 0; i < intervals.length; i++) {
-    const laneMidi = baseMidi + intervals[i];
-    const diff = Math.abs(midi - laneMidi);
-    const mod = diff % 12;
-    if (mod < 0.01 || Math.abs(mod - 12) < 0.01) {
-      return { laneId: i };
-    }
-  }
-  return null;
-}
-
-function renderTicks() {
-  ticksEl.innerHTML = '';
-  const totalSlots = state.session.bars * (state.session.grid / 4) * 4;
-  const beatSlots = state.session.grid / 4;
+function renderMelodyTicks() {
+  melodyTicksEl.innerHTML = '';
+  const totalSlots = getTotalSlots();
+  const beatSlots = state.grid / 4;
   for (let slot = 0; slot <= totalSlots; slot++) {
     const tick = document.createElement('div');
     tick.className = 'tick';
-    const percent = (slot / totalSlots) * 100;
-    tick.style.left = `${percent}%`;
     if (slot % beatSlots === 0) {
       tick.classList.add('beat');
-    } else {
-      tick.classList.add('sub');
     }
-    ticksEl.appendChild(tick);
+    tick.style.left = `${(slot / totalSlots) * 100}%`;
+    melodyTicksEl.appendChild(tick);
   }
 }
 
-function setupBlockInteractions(block, note) {
-  let pressTimer;
-  block.addEventListener('pointerdown', (event) => {
-    event.stopPropagation();
-    block.setPointerCapture(event.pointerId);
-    pressTimer = setTimeout(() => {
-      deleteNote(note.id);
-    }, 500);
+function renderDrumLanes() {
+  drumLanesEl.innerHTML = '';
+  drumLanesEl.style.gridTemplateRows = `repeat(${DRUM_LANES.length}, 1fr)`;
+  DRUM_LANES.forEach((lane) => {
+    const laneEl = document.createElement('div');
+    laneEl.className = 'lane label-drums';
+    laneEl.dataset.lane = lane.id;
+    const label = document.createElement('strong');
+    label.textContent = lane.label;
+    laneEl.appendChild(label);
+    laneEl.addEventListener('pointerdown', handleDrumLanePointerDown);
+    laneEl.addEventListener('pointermove', handleDrumLanePointerMove);
+    laneEl.addEventListener('pointerup', handleDrumLanePointerUp);
+    laneEl.addEventListener('pointercancel', handleDrumLanePointerCancel);
+    drumLanesEl.appendChild(laneEl);
   });
-  const cancel = () => {
-    clearTimeout(pressTimer);
-  };
-  block.addEventListener('pointerup', cancel);
-  block.addEventListener('pointerleave', cancel);
-  block.addEventListener('pointercancel', cancel);
+  renderDrumNotes();
+  renderDrumTicks();
 }
 
-function deleteNote(id) {
-  state.notes = state.notes.filter((n) => n.id !== id);
-  renderNotes();
-  rebuildPart();
+function renderDrumNotes() {
+  const lanes = Array.from(drumLanesEl.children);
+  const totalSlots = getTotalSlots();
+  const gridWidth = drumGridEl.clientWidth || drumGridEl.offsetWidth;
+  const slotWidth = totalSlots > 0 ? gridWidth / totalSlots : 0;
+  lanes.forEach((laneEl) => {
+    Array.from(laneEl.querySelectorAll('.note-block')).forEach((child) => child.remove());
+  });
+  state.drumNotes.forEach((note) => {
+    const laneIndex = DRUM_LANES.findIndex((lane) => lane.id === note.lane);
+    if (laneIndex < 0) return;
+    const laneEl = lanes[laneIndex];
+    if (!laneEl) return;
+    const block = document.createElement('div');
+    block.className = 'note-block drum-note';
+    block.dataset.id = note.id;
+    block.dataset.type = 'drum';
+    block.textContent = DRUM_LANES[laneIndex].label;
+    const left = note.slot * slotWidth;
+    block.style.left = `${left}px`;
+    block.style.width = `${Math.max(slotWidth * note.len, slotWidth * 0.8)}px`;
+    laneEl.appendChild(block);
+
+    const handle = document.createElement('div');
+    handle.className = 'resize-handle';
+    block.appendChild(handle);
+
+    block.addEventListener('pointerdown', (event) => startDrumDrag(event, note));
+    block.addEventListener('pointermove', handleDrumBlockPointerMove);
+    block.addEventListener('pointerup', endBlockInteraction);
+    block.addEventListener('pointercancel', endBlockInteraction);
+    block.addEventListener('dblclick', () => deleteDrumNote(note.id));
+
+    handle.addEventListener('pointerdown', (event) => startDrumResize(event, note));
+    handle.addEventListener('pointermove', handleDrumResizeMove);
+    handle.addEventListener('pointerup', endBlockInteraction);
+    handle.addEventListener('pointercancel', endBlockInteraction);
+  });
 }
 
-function handleLanePointerDown(event) {
-  event.preventDefault();
-  const laneId = Number(event.currentTarget.dataset.lane);
+function renderDrumTicks() {
+  drumTicksEl.innerHTML = '';
+  const totalSlots = getTotalSlots();
+  const beatSlots = state.grid / 4;
+  for (let slot = 0; slot <= totalSlots; slot++) {
+    const tick = document.createElement('div');
+    tick.className = 'tick';
+    if (slot % beatSlots === 0) {
+      tick.classList.add('beat');
+    }
+    tick.style.left = `${(slot / totalSlots) * 100}%`;
+    drumTicksEl.appendChild(tick);
+  }
+}
+
+function getBoundaryFromEvent(event, gridEl) {
+  const totalSlots = getTotalSlots();
+  if (totalSlots <= 0) return 0;
+  const rect = gridEl.getBoundingClientRect();
+  const x = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
+  const slotWidth = rect.width / totalSlots;
+  return Math.round(x / slotWidth);
+}
+
+function startMelodyDrag(event, note) {
+  if (event.target.classList.contains('resize-handle')) return;
+  event.stopPropagation();
   const pointerId = event.pointerId;
-  const data = createNoteOn(laneId);
-  if (!data) return;
+  const pointerSlot = getBoundaryFromEvent(event, melodyGridEl);
+  pointerInteractions.set(pointerId, {
+    type: 'melody-drag',
+    note,
+    offset: pointerSlot - note.slot,
+  });
   event.currentTarget.setPointerCapture(pointerId);
-  state.pendingHold.set(pointerId, data);
-  if (state.lengthMode === 'tap') {
-    finalizeNote(pointerId, data.note, 1);
-  } else {
-    renderNotes();
+}
+
+function handleMelodyBlockPointerMove(event) {
+  const interaction = pointerInteractions.get(event.pointerId);
+  if (!interaction || interaction.type !== 'melody-drag') return;
+  const totalSlots = getTotalSlots();
+  const pointerSlot = Math.max(0, Math.min(getBoundaryFromEvent(event, melodyGridEl), totalSlots));
+  let newSlot = pointerSlot - interaction.offset;
+  newSlot = Math.max(0, Math.min(totalSlots - interaction.note.len, newSlot));
+  if (interaction.note.slot !== newSlot) {
+    interaction.note.slot = newSlot;
+    renderMelodyNotes();
   }
 }
 
-function handleLanePointerUp(event) {
-  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  }
-  finalizeHold(event.pointerId);
+function startMelodyResize(event, note) {
+  event.stopPropagation();
+  const pointerId = event.pointerId;
+  pointerInteractions.set(pointerId, { type: 'melody-resize', note });
+  event.target.setPointerCapture(pointerId);
 }
 
-function handleLanePointerLeave(event) {
-  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  }
-  if (state.lengthMode === 'hold') {
-    finalizeHold(event.pointerId);
-  }
-}
-
-function cancelHold(event) {
-  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  }
-  finalizeHold(event.pointerId, true);
-}
-
-function finalizeHold(pointerId, cancel = false) {
-  const data = state.pendingHold.get(pointerId);
-  if (!data) return;
-  if (cancel) {
-    removePendingNote(pointerId, data.note);
-  } else {
-    const len = computeHoldLength(data);
-    finalizeNote(pointerId, data.note, len);
+function handleMelodyResizeMove(event) {
+  const interaction = pointerInteractions.get(event.pointerId);
+  if (!interaction || interaction.type !== 'melody-resize') return;
+  const totalSlots = getTotalSlots();
+  const boundary = Math.max(0, Math.min(getBoundaryFromEvent(event, melodyGridEl), totalSlots));
+  const endBoundary = Math.max(interaction.note.slot + 1, boundary);
+  const newLen = Math.max(1, Math.min(totalSlots - interaction.note.slot, endBoundary - interaction.note.slot));
+  if (interaction.note.len !== newLen) {
+    interaction.note.len = newLen;
+    renderMelodyNotes();
   }
 }
 
-function removePendingNote(pointerId, note) {
-  state.notes = state.notes.filter((n) => n.id !== note.id);
-  state.pendingHold.delete(pointerId);
-  renderNotes();
-  rebuildPart();
+function startDrumDrag(event, note) {
+  if (event.target.classList.contains('resize-handle')) return;
+  event.stopPropagation();
+  const pointerId = event.pointerId;
+  const pointerSlot = getBoundaryFromEvent(event, drumGridEl);
+  pointerInteractions.set(pointerId, {
+    type: 'drum-drag',
+    note,
+    offset: pointerSlot - note.slot,
+  });
+  event.currentTarget.setPointerCapture(pointerId);
 }
 
-function computeHoldLength(data) {
-  const { note, createdAt } = data;
-  const gridDur = getGridDurationSeconds();
-  const elapsed = Math.max(0, Tone.Transport.seconds - createdAt);
-  const slots = Math.max(1, Math.ceil(elapsed / gridDur));
-  const totalSlots = state.session.bars * (state.session.grid / 4) * 4;
-  return Math.min(slots, Math.max(1, totalSlots - note.slot));
+function handleDrumBlockPointerMove(event) {
+  const interaction = pointerInteractions.get(event.pointerId);
+  if (!interaction || interaction.type !== 'drum-drag') return;
+  const totalSlots = getTotalSlots();
+  const pointerSlot = Math.max(0, Math.min(getBoundaryFromEvent(event, drumGridEl), totalSlots));
+  let newSlot = pointerSlot - interaction.offset;
+  newSlot = Math.max(0, Math.min(totalSlots - interaction.note.len, newSlot));
+  if (interaction.note.slot !== newSlot) {
+    interaction.note.slot = newSlot;
+    renderDrumNotes();
+  }
 }
 
-function finalizeNote(pointerId, note, len) {
-  note.len = Math.max(1, len);
-  state.pendingHold.delete(pointerId);
-  renderNotes();
-  rebuildPart();
-  scheduleOneShot(note);
+function startDrumResize(event, note) {
+  event.stopPropagation();
+  const pointerId = event.pointerId;
+  pointerInteractions.set(pointerId, { type: 'drum-resize', note });
+  event.target.setPointerCapture(pointerId);
 }
 
-function createNoteOn(laneId) {
-  Tone.start();
-  if (!state.playing) {
-    startPlaybackLoop();
+function handleDrumResizeMove(event) {
+  const interaction = pointerInteractions.get(event.pointerId);
+  if (!interaction || interaction.type !== 'drum-resize') return;
+  const totalSlots = getTotalSlots();
+  const boundary = Math.max(0, Math.min(getBoundaryFromEvent(event, drumGridEl), totalSlots));
+  const endBoundary = Math.max(interaction.note.slot + 1, boundary);
+  const newLen = Math.max(1, Math.min(totalSlots - interaction.note.slot, endBoundary - interaction.note.slot));
+  if (interaction.note.len !== newLen) {
+    interaction.note.len = newLen;
+    renderDrumNotes();
   }
-  if (state.recording && !state.recordEnabled) {
-    return null;
+}
+
+function endBlockInteraction(event) {
+  const pointerId = event.pointerId;
+  const target = event.currentTarget;
+  if (target.hasPointerCapture(pointerId)) {
+    target.releasePointerCapture(pointerId);
   }
-  const loopDur = getLoopDurationSeconds();
-  const gridDur = getGridDurationSeconds();
-  const relative = Tone.Transport.seconds % loopDur;
-  const rawSlot = relative / gridDur;
-  let slot = Math.round(rawSlot);
-  const diff = relative - slot * gridDur;
-  if (diff < -EARLY_WINDOW) {
-    slot = Math.floor(rawSlot);
-  } else if (diff > LATE_WINDOW) {
-    slot = Math.ceil(rawSlot);
+  const interaction = pointerInteractions.get(pointerId);
+  if (!interaction) return;
+  pointerInteractions.delete(pointerId);
+  if (interaction.type.startsWith('melody')) {
+    renderMelodyNotes();
+  } else if (interaction.type.startsWith('drum')) {
+    renderDrumNotes();
   }
-  if (slot < 0) slot = 0;
-  const totalSlots = state.session.bars * (state.session.grid / 4) * 4;
-  slot = slot % totalSlots;
-  const id = crypto.randomUUID();
+  rebuildSequences();
+}
+
+function handleMelodyLanePointerDown(event) {
+  const laneIndex = Number(event.currentTarget.dataset.laneIndex);
+  const pointerId = event.pointerId;
+  const totalSlots = getTotalSlots();
+  if (!totalSlots) return;
+  event.currentTarget.setPointerCapture(pointerId);
+  const startBoundary = Math.min(totalSlots - 1, getBoundaryFromEvent(event, melodyGridEl));
   const note = {
-    id,
-    laneId,
+    id: crypto.randomUUID(),
+    laneIndex,
     octave: state.visibleOctave,
-    slot,
+    slot: startBoundary,
     len: 1,
-    kind: state.tool,
-    degree: DEGREE_SEQUENCE[state.chordIndex],
   };
-  state.notes.push(note);
-  return { note, createdAt: Tone.Transport.seconds };
+  state.melodyNotes.push(note);
+  pointerInteractions.set(pointerId, {
+    type: 'melody-create',
+    note,
+    startBoundary,
+  });
+  renderMelodyNotes();
 }
 
-function scheduleOneShot(note) {
-  if (!state.playing) return;
-  const gridDur = getGridDurationSeconds();
-  const loopDur = getLoopDurationSeconds();
-  const relative = Tone.Transport.seconds % loopDur;
-  let offset = note.slot * gridDur - relative;
-  if (offset < 0) {
-    offset += loopDur;
-  }
-  const when = Tone.Transport.seconds + offset;
-  Tone.Transport.scheduleOnce((time) => triggerAudio(note, time), when);
+function handleMelodyLanePointerMove(event) {
+  const interaction = pointerInteractions.get(event.pointerId);
+  if (!interaction || interaction.type !== 'melody-create') return;
+  updateCreatedNote(interaction, event, melodyGridEl);
 }
 
-function triggerAudio(note, time) {
-  const duration = note.len * getGridDurationSeconds();
-  if (note.kind === 'note') {
-    const midi = getMidiForLane(note.laneId, note.octave);
-    synth.triggerAttackRelease(Tone.Frequency(midi, 'midi'), duration, time);
+function handleMelodyLanePointerUp(event) {
+  finalizeLaneInteraction(event);
+}
+
+function handleMelodyLanePointerCancel(event) {
+  finalizeLaneInteraction(event, true);
+}
+
+function handleDrumLanePointerDown(event) {
+  const lane = event.currentTarget.dataset.lane;
+  const pointerId = event.pointerId;
+  const totalSlots = getTotalSlots();
+  if (!totalSlots) return;
+  event.currentTarget.setPointerCapture(pointerId);
+  const startBoundary = Math.min(totalSlots - 1, getBoundaryFromEvent(event, drumGridEl));
+  const note = {
+    id: crypto.randomUUID(),
+    lane,
+    slot: startBoundary,
+    len: 1,
+  };
+  state.drumNotes.push(note);
+  pointerInteractions.set(pointerId, {
+    type: 'drum-create',
+    note,
+    startBoundary,
+  });
+  renderDrumNotes();
+}
+
+function handleDrumLanePointerMove(event) {
+  const interaction = pointerInteractions.get(event.pointerId);
+  if (!interaction || interaction.type !== 'drum-create') return;
+  updateCreatedNote(interaction, event, drumGridEl);
+}
+
+function handleDrumLanePointerUp(event) {
+  finalizeLaneInteraction(event);
+}
+
+function handleDrumLanePointerCancel(event) {
+  finalizeLaneInteraction(event, true);
+}
+
+function updateCreatedNote(interaction, event, gridEl) {
+  const totalSlots = getTotalSlots();
+  const boundary = Math.max(0, Math.min(getBoundaryFromEvent(event, gridEl), totalSlots));
+  const start = Math.min(interaction.startBoundary, totalSlots - 1);
+  interaction.note.slot = start;
+  const endBoundary = Math.max(start + 1, boundary);
+  interaction.note.len = Math.max(1, Math.min(totalSlots - start, endBoundary - start));
+  if (interaction.type.startsWith('melody')) {
+    renderMelodyNotes();
   } else {
-    const chordMidis = getChordMidis(note.degree, note.octave);
-    chordMidis.forEach((midi) => {
-      synth.triggerAttackRelease(Tone.Frequency(midi, 'midi'), duration, time);
-    });
-    flashGhosts(note.id);
+    renderDrumNotes();
   }
-  activateVisual(note.id, duration);
 }
 
-function activateVisual(id, duration) {
+function finalizeLaneInteraction(event, cancel = false) {
+  const pointerId = event.pointerId;
+  if (event.currentTarget.hasPointerCapture(pointerId)) {
+    event.currentTarget.releasePointerCapture(pointerId);
+  }
+  const interaction = pointerInteractions.get(pointerId);
+  if (!interaction) return;
+  if (cancel) {
+    if (interaction.type.startsWith('melody')) {
+      deleteMelodyNote(interaction.note.id);
+    } else {
+      deleteDrumNote(interaction.note.id);
+    }
+  } else {
+    if (interaction.type.startsWith('melody')) {
+      renderMelodyNotes();
+    } else {
+      renderDrumNotes();
+    }
+    rebuildSequences();
+  }
+  pointerInteractions.delete(pointerId);
+}
+
+function deleteMelodyNote(id) {
+  state.melodyNotes = state.melodyNotes.filter((note) => note.id !== id);
+  renderMelodyNotes();
+  rebuildSequences();
+}
+
+function deleteDrumNote(id) {
+  state.drumNotes = state.drumNotes.filter((note) => note.id !== id);
+  renderDrumNotes();
+  rebuildSequences();
+}
+
+function triggerMelody(note, time) {
+  const duration = note.len * getGridDurationSeconds();
+  melodySynth.triggerAttackRelease(
+    Tone.Frequency(getMidiForLane(note.laneIndex, note.octave), 'midi'),
+    duration,
+    time,
+  );
+  flashNote(note.id);
+}
+
+function triggerDrum(note, time) {
+  const synth = drumSynths[note.lane];
+  if (!synth) return;
+  const duration = note.len * getGridDurationSeconds();
+  if (note.lane === 'kick') {
+    synth.triggerAttackRelease('C2', duration, time);
+  } else if (note.lane === 'snare') {
+    synth.triggerAttackRelease(duration, time);
+  } else {
+    synth.triggerAttackRelease('C6', duration, time);
+  }
+  flashNote(note.id);
+}
+
+function flashNote(id) {
   const blocks = document.querySelectorAll(`.note-block[data-id="${id}"]`);
-  blocks.forEach((block) => block.classList.add('active'));
-  setTimeout(() => {
-    blocks.forEach((block) => block.classList.remove('active'));
-  }, duration * 1000);
-}
-
-function flashGhosts(parentId) {
-  const ghosts = document.querySelectorAll(`.note-block.ghost[data-parent="${parentId}"]`);
-  ghosts.forEach((ghost) => {
-    ghost.classList.add('active');
-    setTimeout(() => ghost.classList.remove('active'), 180);
+  blocks.forEach((block) => {
+    block.classList.add('active');
+    setTimeout(() => block.classList.remove('active'), 180);
   });
 }
 
-function getMidiForLane(laneId, octave) {
-  const intervals = getScaleIntervals();
-  const baseMidi = Tone.Frequency(`${state.session.root}${octave}`).toMidi();
-  return baseMidi + intervals[laneId];
-}
-
-function getChordMidis(degree, octave) {
-  const intervals = getScaleIntervals();
-  const index = DEGREE_SEQUENCE.indexOf(degree);
-  const base = Tone.Frequency(`${state.session.root}${octave}`).toMidi();
-  const rootInterval = intervals[index];
-  const thirdIndex = (index + 2) % intervals.length;
-  const fifthIndex = (index + 4) % intervals.length;
-  const thirdOffset = intervals[thirdIndex] + (index + 2 >= intervals.length ? 12 : 0);
-  const fifthOffset = intervals[fifthIndex] + (index + 4 >= intervals.length ? 12 : 0);
-  return [base + rootInterval, base + thirdOffset, base + fifthOffset];
-}
-
-function startPlaybackLoop(force = false) {
-  if (state.playing && !force) return;
-  state.playing = false;
-  Tone.Transport.stop();
-  Tone.Transport.cancel(0);
-  if (state.part) {
-    state.part.dispose();
-    state.part = null;
+function rebuildSequences() {
+  if (state.melodyPart) {
+    state.melodyPart.dispose();
+    state.melodyPart = null;
   }
-  cancelAnimationFrame(rafId);
+  if (state.drumPart) {
+    state.drumPart.dispose();
+    state.drumPart = null;
+  }
+  Tone.Transport.cancel(0);
+  const gridDur = getGridDurationSeconds();
+  const loopDuration = getLoopDurationSeconds();
+  const melodyEvents = [...state.melodyNotes]
+    .sort((a, b) => a.slot - b.slot)
+    .map((note) => ({ time: note.slot * gridDur, note }));
+  if (melodyEvents.length) {
+    const part = new Tone.Part((time, value) => triggerMelody(value.note, time), melodyEvents);
+    part.loop = true;
+    part.loopEnd = loopDuration;
+    part.start(0);
+    state.melodyPart = part;
+  }
+  const drumEvents = [...state.drumNotes]
+    .sort((a, b) => a.slot - b.slot)
+    .map((note) => ({ time: note.slot * gridDur, note }));
+  if (drumEvents.length) {
+    const part = new Tone.Part((time, value) => triggerDrum(value.note, time), drumEvents);
+    part.loop = true;
+    part.loopEnd = loopDuration;
+    part.start(0);
+    state.drumPart = part;
+  }
+  if (state.playing) {
+    Tone.Transport.loopEnd = `${state.bars}m`;
+  }
+}
+
+async function startPlayback() {
+  await Tone.start();
+  if (state.playheadRaf) {
+    cancelAnimationFrame(state.playheadRaf);
+    state.playheadRaf = null;
+  }
+  Tone.Transport.stop();
   Tone.Transport.position = 0;
-  Tone.Transport.bpm.value = state.session.bpm;
+  Tone.Transport.bpm.value = state.bpm;
   Tone.Transport.loop = true;
   Tone.Transport.loopStart = 0;
-  Tone.Transport.loopEnd = `${state.session.bars}m`;
-  startMetronome();
-  rebuildPart();
-  Tone.Transport.start('+0.01');
+  Tone.Transport.loopEnd = `${state.bars}m`;
+  rebuildSequences();
+  Tone.Transport.start('+0.05');
   state.playing = true;
-  updatePlayhead();
-}
-
-function rebuildPart() {
-  if (state.part) {
-    state.part.dispose();
-    state.part = null;
-  }
-  const gridDur = getGridDurationSeconds();
-  const orderedNotes = [...state.notes].sort((a, b) => a.slot - b.slot);
-  const events = orderedNotes.map((note) => ({ time: note.slot * gridDur, note }));
-  if (!events.length) return;
-  const part = new Tone.Part((time, value) => {
-    triggerAudio(value.note, time);
-  }, events);
-  part.loop = true;
-  part.loopEnd = getLoopDurationSeconds();
-  part.start(0);
-  state.part = part;
-}
-
-function startMetronome() {
-  if (metronomeEventId) {
-    Tone.Transport.clear(metronomeEventId);
-    metronomeEventId = null;
-  }
-  let beatIndex = 0;
-  metronomeEventId = Tone.Transport.scheduleRepeat((time) => {
-    const accent = beatIndex % 4 === 0;
-    metronomeSynth.triggerAttackRelease(accent ? 'A5' : 'A4', '32n', time);
-    beatIndex = (beatIndex + 1) % (state.session.bars * 4);
-  }, '4n');
+  updatePlayheads();
 }
 
 function stopPlayback() {
   Tone.Transport.stop();
   state.playing = false;
-  if (state.part) {
-    state.part.stop();
+  if (state.melodyPart) {
+    state.melodyPart.stop();
   }
-  if (metronomeEventId) {
-    Tone.Transport.clear(metronomeEventId);
-    metronomeEventId = null;
+  if (state.drumPart) {
+    state.drumPart.stop();
   }
-  cancelAnimationFrame(rafId);
+  if (state.playheadRaf) {
+    cancelAnimationFrame(state.playheadRaf);
+    state.playheadRaf = null;
+  }
+  melodyPlayheadEl.style.left = '0%';
+  drumPlayheadEl.style.left = '0%';
 }
 
-function toggleRecording() {
-  if (state.recording) {
-    finishRecording();
-  } else {
-    beginRecording();
-  }
-}
-
-async function beginRecording() {
-  await Tone.start();
-  state.recording = true;
-  state.recordEnabled = false;
-  recBtn.classList.add('rec-on');
-  showCountdown(4);
-  startPlaybackLoop(true);
-  setTimeout(() => {
-    hideCountdown();
-    state.recordEnabled = true;
-  }, Tone.Time('1m').toMilliseconds());
-}
-
-function finishRecording() {
-  state.recording = false;
-  state.recordEnabled = true;
-  recBtn.classList.remove('rec-on');
-  hideCountdown();
-}
-
-function showCountdown(beats) {
-  hideCountdown();
-  if (!countdownEl) {
-    countdownEl = document.createElement('div');
-    countdownEl.className = 'countdown';
-    gridEl.appendChild(countdownEl);
-  }
-  countdownEl.textContent = `COUNT ${beats}`;
-  let remaining = beats;
-  const beatDur = Tone.Time('4n').toMilliseconds();
-  if (countdownIntervalId) {
-    clearInterval(countdownIntervalId);
-  }
-  countdownIntervalId = setInterval(() => {
-    remaining -= 1;
-    if (remaining <= 0) {
-      countdownEl.textContent = 'GO';
-      clearInterval(countdownIntervalId);
-      countdownIntervalId = null;
-      setTimeout(hideCountdown, 400);
-    } else {
-      countdownEl.textContent = `COUNT ${remaining}`;
-    }
-  }, beatDur);
-}
-
-function hideCountdown() {
-  if (countdownIntervalId) {
-    clearInterval(countdownIntervalId);
-    countdownIntervalId = null;
-  }
-  if (countdownEl) {
-    countdownEl.remove();
-    countdownEl = null;
-  }
-}
-
-function updatePlayhead() {
+function updatePlayheads() {
   if (!state.playing) return;
-  const loopDur = getLoopDurationSeconds();
-  if (!loopDur) return;
-  const elapsed = Tone.Transport.seconds % loopDur;
-  const progress = elapsed / loopDur;
-  playheadEl.style.left = `${progress * 100}%`;
-  rafId = requestAnimationFrame(updatePlayhead);
-}
-
-function toggleTool() {
-  state.tool = state.tool === 'note' ? 'chord' : 'note';
-  toolBtn.textContent = `Tool: ${state.tool === 'note' ? 'Note' : 'Chord'}`;
-  renderNotes();
-}
-
-function toggleLengthMode() {
-  state.lengthMode = state.lengthMode === 'tap' ? 'hold' : 'tap';
-  lengthBtn.textContent = `Length: ${state.lengthMode === 'tap' ? 'Tap' : 'Hold'}`;
-}
-
-function cycleBars() {
-  const options = [1, 2, 4];
-  const idx = options.indexOf(state.session.bars);
-  state.session.bars = options[(idx + 1) % options.length];
-  barsBtn.textContent = `Bars: ${state.session.bars}`;
-  if (state.playing) {
-    startPlaybackLoop(true);
-  }
-  renderNotes();
-  renderTicks();
-}
-
-function cycleDegree() {
-  state.chordIndex = (state.chordIndex + 1) % DEGREE_SEQUENCE.length;
-  degreeBtn.textContent = `Degree: ${DEGREE_SEQUENCE[state.chordIndex]}`;
-}
-
-function updateOctave(delta) {
-  state.visibleOctave = Math.min(6, Math.max(2, state.visibleOctave + delta));
-  octaveLabel.textContent = `Oct ${state.visibleOctave}`;
-  renderLanes();
-}
-
-function handleDrawerToggle() {
-  drawer.classList.toggle('open');
-  drawerToggle.textContent = drawer.classList.contains('open') ? '▼ Session' : '▲ Session';
+  const loopDuration = getLoopDurationSeconds();
+  if (!loopDuration) return;
+  const elapsed = Tone.Transport.seconds % loopDuration;
+  const progress = elapsed / loopDuration;
+  melodyPlayheadEl.style.left = `${progress * 100}%`;
+  drumPlayheadEl.style.left = `${progress * 100}%`;
+  state.playheadRaf = requestAnimationFrame(updatePlayheads);
 }
 
 function initControls() {
-  recBtn.addEventListener('click', toggleRecording);
-  barsBtn.addEventListener('click', cycleBars);
-  toolBtn.addEventListener('click', toggleTool);
-  lengthBtn.addEventListener('click', toggleLengthMode);
-  degreeBtn.addEventListener('click', cycleDegree);
-  octaveUpBtn.addEventListener('click', () => updateOctave(1));
-  octaveDownBtn.addEventListener('click', () => updateOctave(-1));
-  drawerToggle.addEventListener('click', handleDrawerToggle);
+  playBtn.addEventListener('click', startPlayback);
+  stopBtn.addEventListener('click', stopPlayback);
+
+  gridSelect.addEventListener('change', (event) => {
+    state.grid = Number(event.target.value);
+    normalizeNotesForGrid();
+    renderMelodyNotes();
+    renderMelodyTicks();
+    renderDrumNotes();
+    renderDrumTicks();
+    rebuildSequences();
+  });
 
   bpmInput.addEventListener('input', (event) => {
     const value = Number(event.target.value);
-    state.session.bpm = value;
+    state.bpm = value;
     bpmValue.textContent = `${value}`;
-    Tone.Transport.bpm.value = value;
+    if (state.playing) {
+      Tone.Transport.bpm.value = value;
+    }
   });
 
   scaleSelect.addEventListener('change', (event) => {
-    state.session.scale = event.target.value;
-    renderLanes();
-    rebuildPart();
+    state.scale = event.target.value;
+    renderMelodyLanes();
+    rebuildSequences();
   });
 
   rootSelect.addEventListener('change', (event) => {
-    state.session.root = event.target.value;
-    renderLanes();
-    rebuildPart();
-  });
-
-  gridSelect.addEventListener('change', (event) => {
-    state.session.grid = Number(event.target.value);
-    renderNotes();
-    renderTicks();
-    rebuildPart();
-    if (state.playing) {
-      startPlaybackLoop(true);
-    }
+    state.root = event.target.value;
+    renderMelodyLanes();
+    rebuildSequences();
   });
 
   masterVolumeInput.addEventListener('input', (event) => {
     masterVolume.volume.value = Number(event.target.value);
   });
 
-  metronomeVolumeInput.addEventListener('input', (event) => {
-    metronomeVolume.volume.value = Number(event.target.value);
-  });
+  octaveUpBtn.addEventListener('click', () => updateOctave(1));
+  octaveDownBtn.addEventListener('click', () => updateOctave(-1));
+}
+
+function updateOctave(delta) {
+  state.visibleOctave = Math.min(6, Math.max(2, state.visibleOctave + delta));
+  octaveLabel.textContent = `Oct ${state.visibleOctave}`;
+  renderMelodyLanes();
+  rebuildSequences();
 }
 
 function init() {
-  initControls();
-  renderLanes();
-  renderTicks();
+  bpmValue.textContent = `${state.bpm}`;
+  gridSelect.value = `${state.grid}`;
+  scaleSelect.value = state.scale;
+  rootSelect.value = state.root;
+  masterVolume.volume.value = Number(masterVolumeInput.value);
   octaveLabel.textContent = `Oct ${state.visibleOctave}`;
+  renderMelodyLanes();
+  renderDrumLanes();
+  initControls();
 }
 
 init();
 
 window.addEventListener('resize', () => {
-  renderNotes();
-  renderTicks();
+  renderMelodyNotes();
+  renderMelodyTicks();
+  renderDrumNotes();
+  renderDrumTicks();
 });
