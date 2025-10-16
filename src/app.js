@@ -1010,6 +1010,12 @@ async function startImuTracking() {
     return;
   }
 
+  const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+  if (!window.isSecureContext && !isLocalhost) {
+    updateImuStatus('Motion sensors require HTTPS or localhost access');
+    return;
+  }
+
   const motionGranted = await requestSensorPermission(window.DeviceMotionEvent);
   if (!motionGranted) {
     updateImuStatus('Motion sensor permission denied');
