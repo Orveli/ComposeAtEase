@@ -111,6 +111,125 @@
             <div class="playhead" id="drumPlayhead"></div>
           </div>
         </section>
+        <section class="panel" id="imuPanel">
+          <header class="panel-header">
+            <h2>Device IMU</h2>
+            <div class="panel-tools">
+              <button id="imuToggle" class="toggle-btn" aria-pressed="false">Start Tracking</button>
+              <div class="imu-status" id="imuStatus" aria-live="polite">Awaiting permission</div>
+            </div>
+          </header>
+          <div class="imu-grid">
+            <article class="imu-card">
+              <header class="imu-card__header">
+                <h3>Acceleration</h3>
+                <p>Linear acceleration (m/s²)</p>
+              </header>
+              <div class="imu-values">
+                <div>
+                  <span>X</span>
+                  <strong data-imu="acc-x">0.00</strong>
+                </div>
+                <div>
+                  <span>Y</span>
+                  <strong data-imu="acc-y">0.00</strong>
+                </div>
+                <div>
+                  <span>Z</span>
+                  <strong data-imu="acc-z">0.00</strong>
+                </div>
+              </div>
+              <div class="imu-metric">
+                <span>Magnitude</span>
+                <strong data-imu="acc-mag">0.00</strong>
+              </div>
+              <div class="imu-metric subtle">
+                <span>Peak</span>
+                <strong data-imu="acc-peak">0.00</strong>
+              </div>
+            </article>
+            <article class="imu-card">
+              <header class="imu-card__header">
+                <h3>Gravity &amp; Rotation</h3>
+                <p>Gravity adjusted axes &amp; rotation (°/s)</p>
+              </header>
+              <div class="imu-values">
+                <div>
+                  <span>GX</span>
+                  <strong data-imu="accg-x">0.00</strong>
+                </div>
+                <div>
+                  <span>GY</span>
+                  <strong data-imu="accg-y">0.00</strong>
+                </div>
+                <div>
+                  <span>GZ</span>
+                  <strong data-imu="accg-z">0.00</strong>
+                </div>
+              </div>
+              <div class="imu-metric">
+                <span>Gravity magnitude</span>
+                <strong data-imu="accg-mag">0.00</strong>
+              </div>
+              <div class="imu-rotation">
+                <div>
+                  <span>α</span>
+                  <strong data-imu="rot-alpha">0.00</strong>
+                </div>
+                <div>
+                  <span>β</span>
+                  <strong data-imu="rot-beta">0.00</strong>
+                </div>
+                <div>
+                  <span>γ</span>
+                  <strong data-imu="rot-gamma">0.00</strong>
+                </div>
+              </div>
+              <div class="imu-metric subtle">
+                <span>Rotation peak</span>
+                <strong data-imu="rot-peak">0.00</strong>
+              </div>
+            </article>
+            <article class="imu-card imu-card--summary">
+              <header class="imu-card__header">
+                <h3>Orientation &amp; Stats</h3>
+                <p>Real-time heading</p>
+              </header>
+              <div class="imu-orientation">
+                <div>
+                  <span>Heading</span>
+                  <strong data-imu="ori-alpha">0.00°</strong>
+                </div>
+                <div>
+                  <span>Tilt X</span>
+                  <strong data-imu="ori-beta">0.00°</strong>
+                </div>
+                <div>
+                  <span>Tilt Y</span>
+                  <strong data-imu="ori-gamma">0.00°</strong>
+                </div>
+                <div>
+                  <span>Absolute</span>
+                  <strong data-imu="ori-absolute">No</strong>
+                </div>
+              </div>
+              <dl class="imu-summary">
+                <div>
+                  <dt>Samples</dt>
+                  <dd data-imu="samples">0</dd>
+                </div>
+                <div>
+                  <dt>Avg interval</dt>
+                  <dd data-imu="interval">--</dd>
+                </div>
+                <div>
+                  <dt>Last update</dt>
+                  <dd data-imu="timestamp">--</dd>
+                </div>
+              </dl>
+            </article>
+          </div>
+        </section>
       </main>
     </div>
   </body>
