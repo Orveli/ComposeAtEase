@@ -251,6 +251,7 @@ const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).reduce(
 );
 const imuCubeEl = document.getElementById('imuCube');
 const imuCombinedChartEl = document.getElementById('imuAllChart');
+const chartJsScriptEl = document.querySelector('script[data-chartjs]');
 
 const IMU_SERIES = [
   {
@@ -322,6 +323,9 @@ const imuCharts = {
   combined: null,
   historyLimit: 120,
 };
+
+let chartDefaultsApplied = false;
+let chartLoadListenerAttached = false;
 
 function getTotalSlots() {
   return state.bars * state.grid;
@@ -1611,8 +1615,8 @@ function updateImuOrientationCube(orientation = {}) {
   imuCubeEl.style.transform = `rotateZ(${alpha}deg) rotateX(${beta}deg) rotateY(${gamma}deg)`;
 }
 
-function createImuCombinedChart(context) {
-  if (!context || typeof Chart === 'undefined') return null;
+function createImuCombinedChart(context, chartLib = window.Chart) {
+  if (!context || !chartLib) return null;
   const datasets = IMU_SERIES.map((item) => ({
     label: item.label,
     data: [],
@@ -1626,7 +1630,7 @@ function createImuCombinedChart(context) {
     yAxisID: item.axisId,
   }));
 
-  return new Chart(context, {
+  return new chartLib(context, {
     type: 'line',
     data: { labels: [], datasets },
     options: {
@@ -1727,14 +1731,50 @@ function createImuCombinedChart(context) {
 }
 
 function setupImuCharts() {
-  if (typeof Chart === 'undefined') return;
-  Chart.defaults.color = '#e2e8f0';
-  Chart.defaults.font.family = "'Manrope', sans-serif";
-  Chart.defaults.font.size = 12;
+  const chartLib = window.Chart;
+  if (!chartLib) {
+    if (chartJsScriptEl && !chartLoadListenerAttached) {
+      chartLoadListenerAttached = true;
+      chartJsScriptEl.addEventListener(
+        'load',
+        () => {
+          chartLoadListenerAttached = false;
+          setupImuCharts();
+          renderImuData();
+        },
+        { once: true },
+      );
+      chartJsScriptEl.addEventListener(
+        'error',
+        () => {
+          chartLoadListenerAttached = false;
+          updateImuStatus('Live chart unavailable (failed to load Chart.js)');
+        },
+        { once: true },
+      );
+    }
+    return;
+  }
+
+  if (!chartDefaultsApplied) {
+    chartLib.defaults.color = '#e2e8f0';
+    chartLib.defaults.font.family = "'Manrope', sans-serif";
+    chartLib.defaults.font.size = 12;
+    chartDefaultsApplied = true;
+  }
 
   if (!imuCharts.combined && imuCombinedChartEl) {
     const context = imuCombinedChartEl.getContext('2d');
-    imuCharts.combined = createImuCombinedChart(context);
+    if (context) {
+      imuCharts.combined = createImuCombinedChart(context, chartLib);
+      if (imuState.active && imuState.samples > 0) {
+        updateImuChartsData({
+          acceleration: imuState.data.acc,
+          rotation: imuState.data.rotation,
+          orientation: imuState.data.orientation,
+        });
+      }
+    }
   }
 }
 
@@ -1776,6 +1816,9 @@ function pushSampleToChart(chart, sample, label) {
 }
 
 function updateImuChartsData({ acceleration, rotation, orientation }) {
+  if (!imuCharts.combined) {
+    setupImuCharts();
+  }
   if (!imuCharts.combined) return;
   const label = `${imuState.samples}`;
   const sample = {
