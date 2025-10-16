@@ -245,54 +245,76 @@ const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).reduce(
   {},
 );
 const imuCubeEl = document.getElementById('imuCube');
-const imuAccChartEl = document.getElementById('imuAccChart');
-const imuRotChartEl = document.getElementById('imuRotChart');
+const imuCombinedChartEl = document.getElementById('imuAllChart');
 
-const IMU_ACCEL_SERIES = [
+const IMU_SERIES = [
   {
-    key: 'x',
-    label: 'X',
-    border: 'rgba(248, 113, 113, 0.85)',
-    background: 'rgba(248, 113, 113, 0.15)',
-  },
-  {
-    key: 'y',
-    label: 'Y',
-    border: 'rgba(45, 212, 191, 0.85)',
-    background: 'rgba(45, 212, 191, 0.15)',
-  },
-  {
-    key: 'z',
-    label: 'Z',
-    border: 'rgba(59, 130, 246, 0.85)',
-    background: 'rgba(59, 130, 246, 0.15)',
-  },
-];
-
-const IMU_ROT_SERIES = [
-  {
-    key: 'alpha',
-    label: 'α',
+    key: 'heading',
+    label: 'Heading',
     border: 'rgba(251, 191, 36, 0.85)',
     background: 'rgba(251, 191, 36, 0.15)',
+    axisId: 'orientation',
   },
   {
-    key: 'beta',
-    label: 'β',
+    key: 'tilt',
+    label: 'Tilt',
     border: 'rgba(147, 197, 253, 0.85)',
     background: 'rgba(147, 197, 253, 0.15)',
+    axisId: 'orientation',
   },
   {
-    key: 'gamma',
-    label: 'γ',
+    key: 'roll',
+    label: 'Roll',
     border: 'rgba(236, 72, 153, 0.85)',
     background: 'rgba(236, 72, 153, 0.15)',
+    axisId: 'orientation',
+  },
+  {
+    key: 'accX',
+    label: 'Acc X',
+    border: 'rgba(248, 113, 113, 0.85)',
+    background: 'rgba(248, 113, 113, 0.15)',
+    axisId: 'acceleration',
+  },
+  {
+    key: 'accY',
+    label: 'Acc Y',
+    border: 'rgba(45, 212, 191, 0.85)',
+    background: 'rgba(45, 212, 191, 0.15)',
+    axisId: 'acceleration',
+  },
+  {
+    key: 'accZ',
+    label: 'Acc Z',
+    border: 'rgba(59, 130, 246, 0.85)',
+    background: 'rgba(59, 130, 246, 0.15)',
+    axisId: 'acceleration',
+  },
+  {
+    key: 'rotAlpha',
+    label: 'Rot α',
+    border: 'rgba(94, 234, 212, 0.85)',
+    background: 'rgba(94, 234, 212, 0.15)',
+    axisId: 'rotation',
+  },
+  {
+    key: 'rotBeta',
+    label: 'Rot β',
+    border: 'rgba(129, 140, 248, 0.85)',
+    background: 'rgba(129, 140, 248, 0.15)',
+    axisId: 'rotation',
+  },
+  {
+    key: 'rotGamma',
+    label: 'Rot γ',
+    border: 'rgba(251, 146, 60, 0.85)',
+    background: 'rgba(251, 146, 60, 0.15)',
+    axisId: 'rotation',
   },
 ];
 
 const imuCharts = {
-  acceleration: null,
-  rotation: null,
+  combined: null,
   historyLimit: 120,
 };
 
@@ -1558,9 +1580,9 @@ function updateImuOrientationCube(orientation = {}) {
   imuCubeEl.style.transform = `rotateZ(${alpha}deg) rotateX(${beta}deg) rotateY(${gamma}deg)`;
 }
 
-function createImuChart(context, series, yTitle) {
+function createImuCombinedChart(context) {
   if (!context || typeof Chart === 'undefined') return null;
-  const datasets = series.map((item) => ({
+  const datasets = IMU_SERIES.map((item) => ({
     label: item.label,
     data: [],
     borderColor: item.border,
@@ -1570,6 +1592,7 @@ function createImuChart(context, series, yTitle) {
     pointRadius: 0,
     fill: false,
     metaKey: item.key,
+    yAxisID: item.axisId,
   }));
 
   return new Chart(context, {
@@ -1612,18 +1635,58 @@ function createImuChart(context, series, yTitle) {
             drawBorder: false,
           },
         },
-        y: {
+        orientation: {
+          position: 'left',
           title: {
             display: true,
-            text: yTitle,
-            color: 'rgba(148, 197, 253, 0.8)',
+            text: 'Orientation (°)',
+            color: 'rgba(251, 191, 36, 0.85)',
             font: { size: 11, weight: '600' },
           },
           ticks: {
-            color: '#e2e8f0',
+            color: 'rgba(254, 249, 195, 0.85)',
           },
+          suggestedMin: -200,
+          suggestedMax: 360,
           grid: {
             color: 'rgba(148, 163, 184, 0.12)',
+            drawBorder: false,
+          },
+        },
+        acceleration: {
+          position: 'right',
+          title: {
+            display: true,
+            text: 'Linear acceleration (m/s²)',
+            color: 'rgba(45, 212, 191, 0.85)',
+            font: { size: 11, weight: '600' },
+          },
+          ticks: {
+            color: 'rgba(190, 242, 255, 0.8)',
+          },
+          suggestedMin: -20,
+          suggestedMax: 20,
+          grid: {
+            drawOnChartArea: false,
+            drawBorder: false,
+          },
+        },
+        rotation: {
+          position: 'right',
+          offset: true,
+          title: {
+            display: true,
+            text: 'Rotation rate (°/s)',
+            color: 'rgba(129, 140, 248, 0.85)',
+            font: { size: 11, weight: '600' },
+          },
+          ticks: {
+            color: 'rgba(199, 210, 254, 0.82)',
+          },
+          suggestedMin: -720,
+          suggestedMax: 720,
+          grid: {
+            drawOnChartArea: false,
             drawBorder: false,
           },
         },
@@ -1638,30 +1701,19 @@ function setupImuCharts() {
   Chart.defaults.font.family = "'Manrope', sans-serif";
   Chart.defaults.font.size = 12;
 
-  if (!imuCharts.acceleration && imuAccChartEl) {
-    const context = imuAccChartEl.getContext('2d');
-    imuCharts.acceleration = createImuChart(context, IMU_ACCEL_SERIES, 'm/s²');
-  }
-  if (!imuCharts.rotation && imuRotChartEl) {
-    const context = imuRotChartEl.getContext('2d');
-    imuCharts.rotation = createImuChart(context, IMU_ROT_SERIES, '°/s');
+  if (!imuCharts.combined && imuCombinedChartEl) {
+    const context = imuCombinedChartEl.getContext('2d');
+    imuCharts.combined = createImuCombinedChart(context);
   }
 }
 
 function resetImuCharts() {
-  if (imuCharts.acceleration) {
-    imuCharts.acceleration.data.labels.length = 0;
-    imuCharts.acceleration.data.datasets.forEach((dataset) => {
+  if (imuCharts.combined) {
+    imuCharts.combined.data.labels.length = 0;
+    imuCharts.combined.data.datasets.forEach((dataset) => {
       dataset.data.length = 0;
     });
-    imuCharts.acceleration.update('none');
-  }
-  if (imuCharts.rotation) {
-    imuCharts.rotation.data.labels.length = 0;
-    imuCharts.rotation.data.datasets.forEach((dataset) => {
-      dataset.data.length = 0;
-    });
-    imuCharts.rotation.update('none');
+    imuCharts.combined.update('none');
   }
 }
 
@@ -1682,9 +1734,8 @@ function pushSampleToChart(chart, sample, label) {
     chart.data.labels.shift();
   }
   chart.data.datasets.forEach((dataset) => {
-    const value = sample && Number.isFinite(sample[dataset.metaKey])
-      ? sample[dataset.metaKey]
-      : 0;
+    const rawValue = sample ? sample[dataset.metaKey] : null;
+    const value = Number.isFinite(rawValue) ? rawValue : null;
     dataset.data.push(value);
     if (dataset.data.length > imuCharts.historyLimit) {
       dataset.data.shift();
@@ -1693,11 +1744,24 @@ function pushSampleToChart(chart, sample, label) {
   chart.update('none');
 }
 
-function updateImuChartsData({ acceleration, rotation }) {
-  if (!imuCharts.acceleration || !imuCharts.rotation) return;
+function updateImuChartsData({ acceleration, rotation, orientation }) {
+  if (!imuCharts.combined) return;
   const label = `${imuState.samples}`;
-  pushSampleToChart(imuCharts.acceleration, acceleration, label);
-  pushSampleToChart(imuCharts.rotation, rotation, label);
+  const sample = {
+    heading:
+      orientation && Number.isFinite(orientation.alpha)
+        ? ((orientation.alpha % 360) + 360) % 360
+        : null,
+    tilt: orientation && Number.isFinite(orientation.beta) ? orientation.beta : null,
+    roll: orientation && Number.isFinite(orientation.gamma) ? orientation.gamma : null,
+    accX: acceleration && Number.isFinite(acceleration.x) ? acceleration.x : null,
+    accY: acceleration && Number.isFinite(acceleration.y) ? acceleration.y : null,
+    accZ: acceleration && Number.isFinite(acceleration.z) ? acceleration.z : null,
+    rotAlpha: rotation && Number.isFinite(rotation.alpha) ? rotation.alpha : null,
+    rotBeta: rotation && Number.isFinite(rotation.beta) ? rotation.beta : null,
+    rotGamma: rotation && Number.isFinite(rotation.gamma) ? rotation.gamma : null,
+  };
+  pushSampleToChart(imuCharts.combined, sample, label);
 }
 
 function renderImuData() {
@@ -1936,6 +2000,7 @@ function handleDeviceMotion(event) {
   updateImuChartsData({
     acceleration: { x: ax, y: ay, z: az },
     rotation: { alpha: ra, beta: rb, gamma: rg },
+    orientation: imuState.data.orientation,
   });
   renderImuData();
 }

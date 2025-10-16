@@ -790,6 +790,30 @@ button.ghost:hover {
   gap: 16px;
 }
 
+.imu-legend-groups {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.imu-legend-groups section {
+  background: rgba(30, 41, 59, 0.45);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.imu-legend-groups h4 {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(148, 197, 253, 0.75);
+}
+
 .imu-chart-card canvas {
   width: 100%;
   height: 220px;
@@ -841,19 +865,34 @@ button.ghost:hover {
   color: rgba(59, 130, 246, 0.9);
 }
 
-.imu-legend__item--alpha {
+.imu-legend__item--heading {
   border-color: rgba(251, 191, 36, 0.5);
-  color: rgba(251, 191, 36, 0.9);
+  color: rgba(251, 191, 36, 0.92);
 }
 
-.imu-legend__item--beta {
+.imu-legend__item--tilt {
   border-color: rgba(147, 197, 253, 0.5);
   color: rgba(147, 197, 253, 0.9);
 }
 
-.imu-legend__item--gamma {
+.imu-legend__item--roll {
   border-color: rgba(236, 72, 153, 0.5);
   color: rgba(236, 72, 153, 0.9);
+}
+
+.imu-legend__item--rot-alpha {
+  border-color: rgba(94, 234, 212, 0.5);
+  color: rgba(94, 234, 212, 0.9);
+}
+
+.imu-legend__item--rot-beta {
+  border-color: rgba(129, 140, 248, 0.5);
+  color: rgba(129, 140, 248, 0.9);
+}
+
+.imu-legend__item--rot-gamma {
+  border-color: rgba(251, 146, 60, 0.5);
+  color: rgba(251, 146, 60, 0.9);
 }
 
 .imu-chart-footer {
@@ -862,6 +901,7 @@ button.ghost:hover {
   gap: 16px;
   font-size: 0.85rem;
   color: rgba(226, 232, 240, 0.9);
+  flex-wrap: wrap;
 }
 
 .imu-chart-footer div {
