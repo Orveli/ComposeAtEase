@@ -79,6 +79,10 @@ import {
 
 let pendingSynthSequenceRefresh = null;
 
+const DRUM_SAMPLE_LONG_PRESS_MS = 500;
+let drumSampleMenuEl = null;
+let drumSampleMenuCleanup = null;
+
 const imuPlotter = {
   canvas: imuCombinedChartEl,
   ctx: null,
@@ -116,6 +120,73 @@ function getTrackById(id) {
 
 function getActiveTrack() {
   return getTrackById(state.activeTrackId);
+}
+
+function closeDrumSampleMenu() {
+  if (drumSampleMenuCleanup) {
+    document.removeEventListener('pointerdown', drumSampleMenuCleanup, true);
+    drumSampleMenuCleanup = null;
+  }
+  if (drumSampleMenuEl?.parentElement) {
+    drumSampleMenuEl.remove();
+  }
+  drumSampleMenuEl = null;
+}
+
+function openDrumSampleMenu(track, laneId, position) {
+  closeDrumSampleMenu();
+  const lane = getDrumLaneById(laneId);
+  if (!lane?.samples?.length) return;
+  const host = document.querySelector('.app') || document.body;
+  const menu = document.createElement('div');
+  menu.className = 'drum-sample-menu';
+  const header = document.createElement('div');
+  header.className = 'drum-sample-menu__header';
+  header.textContent = `${lane.label} Samples`;
+  menu.appendChild(header);
+  const currentSelection = getDrumSampleSelection(track, laneId);
+  lane.samples.forEach((sample) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'drum-sample-menu__option';
+    option.textContent = sample.label;
+    if (sample.id === currentSelection) {
+      option.classList.add('selected');
+    }
+    option.addEventListener('click', () => {
+      track.drumSamples[laneId] = sample.id;
+      ensureInstrumentForTrack(track);
+      renderDrumSampleControls(track);
+      renderDrumLanes(track);
+      rebuildSequences();
+      closeDrumSampleMenu();
+    });
+    menu.appendChild(option);
+  });
+  host.appendChild(menu);
+  requestAnimationFrame(() => {
+    const hostRect = host.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const maxLeft = hostRect.width - menuRect.width - 12;
+    const maxTop = hostRect.height - menuRect.height - 12;
+    const offsetLeft = Math.min(
+      Math.max(position.x - hostRect.left - menuRect.width / 2, 12),
+      Math.max(12, maxLeft),
+    );
+    const offsetTop = Math.min(
+      Math.max(position.y - hostRect.top - menuRect.height / 2, 12),
+      Math.max(12, maxTop),
+    );
+    menu.style.left = `${offsetLeft}px`;
+    menu.style.top = `${offsetTop}px`;
+  });
+  drumSampleMenuCleanup = (event) => {
+    if (!menu.contains(event.target)) {
+      closeDrumSampleMenu();
+    }
+  };
+  document.addEventListener('pointerdown', drumSampleMenuCleanup, true);
+  drumSampleMenuEl = menu;
 }
 
 function getSynthTracks() {
@@ -575,6 +646,7 @@ function renderActiveTrack() {
   const track = getActiveTrack();
   if (!track) return;
   if (track.type === 'synth') {
+    closeDrumSampleMenu();
     synthPanelEl.classList.remove('hidden');
     drumPanelEl.classList.add('hidden');
     renderSynthPanel(track);
@@ -877,6 +949,7 @@ function renderSynthNotes(track) {
 }
 
 function renderDrumPanel(track) {
+  closeDrumSampleMenu();
   ensureDrumSamples(track);
   drumTitleEl.textContent = track.name;
   renderDrumSampleControls(track);
@@ -1048,6 +1121,74 @@ function findDrumNoteAtSlot(track, lane, slot) {
   );
 }
 
+function clearPendingDrumTimer(interaction) {
+  if (interaction?.timer) {
+    clearTimeout(interaction.timer);
+    interaction.timer = null;
+  }
+}
+
+function activateDrumSwipeInteraction(interaction) {
+  const track = getTrackById(interaction.trackId);
+  if (!track) return null;
+  clearPendingDrumTimer(interaction);
+  interaction.type = 'drum-swipe';
+  const { lane, startSlot } = interaction;
+  const existing = findDrumNoteAtSlot(track, lane, startSlot);
+  if (interaction.mode === 'erase') {
+    if (existing) {
+      const existingIndex = track.notes.indexOf(existing);
+      if (existingIndex >= 0) {
+        const [removed] = track.notes.splice(existingIndex, 1);
+        interaction.deleted.push(removed);
+      }
+    }
+  } else if (!existing) {
+    const note = {
+      id: crypto.randomUUID(),
+      trackId: track.id,
+      lane,
+      slot: startSlot,
+      len: 1,
+    };
+    track.notes.push(note);
+    interaction.created.push(note);
+  }
+  renderDrumNotes(track);
+  return interaction;
+}
+
+function applyDrumTap(interaction) {
+  const track = getTrackById(interaction.trackId);
+  if (!track) return;
+  const { lane, startSlot, mode } = interaction;
+  const existing = findDrumNoteAtSlot(track, lane, startSlot);
+  let changed = false;
+  if (mode === 'erase') {
+    if (existing) {
+      const existingIndex = track.notes.indexOf(existing);
+      if (existingIndex >= 0) {
+        track.notes.splice(existingIndex, 1);
+        changed = true;
+      }
+    }
+  } else if (!existing) {
+    const note = {
+      id: crypto.randomUUID(),
+      trackId: track.id,
+      lane,
+      slot: startSlot,
+      len: 1,
+    };
+    track.notes.push(note);
+    changed = true;
+  }
+  if (changed) {
+    renderDrumNotes(track);
+    rebuildSequences();
+  }
+}
+
 function handleMelodyLanePointerDown(event) {
   const track = getActiveTrack();
   if (!track || track.type !== 'synth') return;
@@ -1099,43 +1240,49 @@ function handleDrumLanePointerDown(event) {
   const existing = findDrumNoteAtSlot(track, lane, startSlot);
   event.currentTarget.setPointerCapture(pointerId);
   const interaction = {
-    type: 'drum-swipe',
+    type: 'pending-drum',
     mode: existing ? 'erase' : 'paint',
     lane,
     trackId: track.id,
+    startSlot,
+    pointerId,
     touchedSlots: new Set([startSlot]),
     created: [],
     deleted: [],
+    timer: null,
+    longPress: false,
+    position: { x: event.clientX, y: event.clientY },
   };
-  if (existing) {
-    const existingIndex = track.notes.indexOf(existing);
-    if (existingIndex >= 0) {
-      const [removed] = track.notes.splice(existingIndex, 1);
-      interaction.deleted.push(removed);
+  interaction.timer = window.setTimeout(() => {
+    if (pointerInteractions.get(pointerId) !== interaction) return;
+    interaction.timer = null;
+    interaction.longPress = true;
+    interaction.type = 'drum-long-press';
+    const currentTrack = getTrackById(interaction.trackId);
+    if (currentTrack) {
+      openDrumSampleMenu(currentTrack, lane, interaction.position);
     }
-  } else {
-    const note = {
-      id: crypto.randomUUID(),
-      trackId: track.id,
-      lane,
-      slot: startSlot,
-      len: 1,
-    };
-    track.notes.push(note);
-    interaction.created.push(note);
-  }
+  }, DRUM_SAMPLE_LONG_PRESS_MS);
   pointerInteractions.set(pointerId, interaction);
-  renderDrumNotes(track);
 }
 
 function handleDrumLanePointerMove(event) {
-  const interaction = pointerInteractions.get(event.pointerId);
-  if (!interaction || interaction.type !== 'drum-swipe') return;
-  const track = getTrackById(interaction.trackId);
-  if (!track) return;
+  const pointerId = event.pointerId;
+  let interaction = pointerInteractions.get(pointerId);
+  if (!interaction) return;
   const totalSlots = getTotalSlots();
   if (!totalSlots) return;
   const slot = Math.min(totalSlots - 1, Math.max(0, getBoundaryFromEvent(event, drumGridEl)));
+  interaction.position = { x: event.clientX, y: event.clientY };
+  if (interaction.type === 'pending-drum') {
+    if (interaction.longPress) return;
+    if (slot === interaction.startSlot) return;
+    interaction = activateDrumSwipeInteraction(interaction) || interaction;
+    if (!interaction || interaction.type !== 'drum-swipe') return;
+  }
+  if (interaction.type !== 'drum-swipe') return;
+  const track = getTrackById(interaction.trackId);
+  if (!track) return;
   if (interaction.touchedSlots.has(slot)) return;
   interaction.touchedSlots.add(slot);
   const existing = findDrumNoteAtSlot(track, interaction.lane, slot);
@@ -1163,10 +1310,48 @@ function handleDrumLanePointerMove(event) {
 }
 
 function handleDrumLanePointerUp(event) {
+  const pointerId = event.pointerId;
+  const interaction = pointerInteractions.get(pointerId);
+  if (!interaction) {
+    finalizeLaneInteraction(event);
+    return;
+  }
+  clearPendingDrumTimer(interaction);
+  if (interaction.type === 'pending-drum') {
+    if (!interaction.longPress) {
+      applyDrumTap(interaction);
+    }
+    pointerInteractions.delete(pointerId);
+    if (event.currentTarget.hasPointerCapture(pointerId)) {
+      event.currentTarget.releasePointerCapture(pointerId);
+    }
+    return;
+  }
+  if (interaction.type === 'drum-long-press') {
+    pointerInteractions.delete(pointerId);
+    if (event.currentTarget.hasPointerCapture(pointerId)) {
+      event.currentTarget.releasePointerCapture(pointerId);
+    }
+    return;
+  }
   finalizeLaneInteraction(event);
 }
 
 function handleDrumLanePointerCancel(event) {
+  const pointerId = event.pointerId;
+  const interaction = pointerInteractions.get(pointerId);
+  if (!interaction) {
+    finalizeLaneInteraction(event, true);
+    return;
+  }
+  clearPendingDrumTimer(interaction);
+  if (interaction.type === 'pending-drum' || interaction.type === 'drum-long-press') {
+    pointerInteractions.delete(pointerId);
+    if (event.currentTarget.hasPointerCapture(pointerId)) {
+      event.currentTarget.releasePointerCapture(pointerId);
+    }
+    return;
+  }
   finalizeLaneInteraction(event, true);
 }
 
