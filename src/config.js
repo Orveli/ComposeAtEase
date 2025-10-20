@@ -4,9 +4,231 @@ export const SCALE_INTERVALS = {
 };
 
 export const DRUM_LANES = [
-  { id: 'kick', label: 'Kick' },
-  { id: 'snare', label: 'Snare' },
-  { id: 'hat', label: 'Hi-Hat' },
+  {
+    id: 'hat',
+    label: 'Hi-Hat',
+    engine: 'metal',
+    defaultNote: 'C6',
+    samples: [
+      {
+        id: 'tightHat',
+        label: 'Tight Hat',
+        settings: {
+          frequency: 620,
+          harmonicity: 6.2,
+          modulationIndex: 24,
+          resonance: 8000,
+          envelope: { attack: 0.001, decay: 0.08, release: 0.02 },
+        },
+      },
+      {
+        id: 'openHat',
+        label: 'Open Hat',
+        settings: {
+          frequency: 520,
+          harmonicity: 5.8,
+          modulationIndex: 18,
+          resonance: 6000,
+          envelope: { attack: 0.001, decay: 0.32, release: 0.2 },
+        },
+      },
+      {
+        id: 'shaker',
+        label: 'Shaker',
+        settings: {
+          frequency: 800,
+          harmonicity: 5.4,
+          modulationIndex: 30,
+          resonance: 9000,
+          envelope: { attack: 0.001, decay: 0.12, release: 0.05 },
+        },
+      },
+    ],
+  },
+  {
+    id: 'snare',
+    label: 'Snare',
+    engine: 'noise',
+    samples: [
+      {
+        id: 'tightSnare',
+        label: 'Tight Snare',
+        settings: {
+          noise: { type: 'white' },
+          envelope: { attack: 0.001, decay: 0.22, sustain: 0, release: 0.18 },
+        },
+      },
+      {
+        id: 'brightSnare',
+        label: 'Bright Snare',
+        settings: {
+          noise: { type: 'pink' },
+          envelope: { attack: 0.001, decay: 0.28, sustain: 0, release: 0.22 },
+          filterEnvelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.12, baseFrequency: 1800 },
+        },
+      },
+      {
+        id: 'deepSnare',
+        label: 'Deep Snare',
+        settings: {
+          noise: { type: 'brown' },
+          envelope: { attack: 0.001, decay: 0.34, sustain: 0, release: 0.28 },
+          filterEnvelope: { attack: 0.001, decay: 0.24, sustain: 0, release: 0.18, baseFrequency: 900 },
+        },
+      },
+    ],
+  },
+  {
+    id: 'clap',
+    label: 'Clap',
+    engine: 'noise',
+    samples: [
+      {
+        id: 'studioClap',
+        label: 'Studio Clap',
+        settings: {
+          noise: { type: 'white' },
+          envelope: { attack: 0.001, decay: 0.18, sustain: 0, release: 0.14 },
+          filterEnvelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.08, baseFrequency: 2200 },
+        },
+      },
+      {
+        id: 'wideClap',
+        label: 'Wide Clap',
+        settings: {
+          noise: { type: 'pink' },
+          envelope: { attack: 0.001, decay: 0.32, sustain: 0, release: 0.26 },
+          filterEnvelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.15, baseFrequency: 1800 },
+        },
+      },
+      {
+        id: 'shortClap',
+        label: 'Short Clap',
+        settings: {
+          noise: { type: 'white' },
+          envelope: { attack: 0.001, decay: 0.12, sustain: 0, release: 0.08 },
+          filterEnvelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.06, baseFrequency: 2600 },
+        },
+      },
+    ],
+  },
+  {
+    id: 'perc',
+    label: 'Perc',
+    engine: 'metal',
+    defaultNote: 'C5',
+    samples: [
+      {
+        id: 'chimePerc',
+        label: 'Chime Perc',
+        settings: {
+          frequency: 760,
+          harmonicity: 3.6,
+          modulationIndex: 20,
+          resonance: 5000,
+          envelope: { attack: 0.001, decay: 0.25, release: 0.22 },
+        },
+      },
+      {
+        id: 'clickPerc',
+        label: 'Click Perc',
+        settings: {
+          frequency: 920,
+          harmonicity: 4.4,
+          modulationIndex: 16,
+          resonance: 7000,
+          envelope: { attack: 0.001, decay: 0.12, release: 0.08 },
+        },
+      },
+      {
+        id: 'sparkPerc',
+        label: 'Spark Perc',
+        settings: {
+          frequency: 680,
+          harmonicity: 5.2,
+          modulationIndex: 28,
+          resonance: 6400,
+          envelope: { attack: 0.001, decay: 0.18, release: 0.14 },
+        },
+      },
+    ],
+  },
+  {
+    id: 'tom',
+    label: 'Tom',
+    engine: 'membrane',
+    defaultNote: 'G2',
+    samples: [
+      {
+        id: 'lowTom',
+        label: 'Low Tom',
+        settings: {
+          pitchDecay: 0.07,
+          octaves: 5,
+          envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.3 },
+        },
+        note: 'F2',
+      },
+      {
+        id: 'midTom',
+        label: 'Mid Tom',
+        settings: {
+          pitchDecay: 0.05,
+          octaves: 4,
+          envelope: { attack: 0.001, decay: 0.32, sustain: 0, release: 0.24 },
+        },
+        note: 'A2',
+      },
+      {
+        id: 'highTom',
+        label: 'High Tom',
+        settings: {
+          pitchDecay: 0.04,
+          octaves: 3,
+          envelope: { attack: 0.001, decay: 0.26, sustain: 0, release: 0.2 },
+        },
+        note: 'C3',
+      },
+    ],
+  },
+  {
+    id: 'kick',
+    label: 'Kick',
+    engine: 'membrane',
+    defaultNote: 'C1',
+    samples: [
+      {
+        id: 'deepKick',
+        label: 'Deep Kick',
+        settings: {
+          pitchDecay: 0.12,
+          octaves: 8,
+          envelope: { attack: 0.001, decay: 0.6, sustain: 0, release: 0.3 },
+        },
+        note: 'A0',
+      },
+      {
+        id: 'punchKick',
+        label: 'Punch Kick',
+        settings: {
+          pitchDecay: 0.09,
+          octaves: 6,
+          envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.22 },
+        },
+        note: 'C1',
+      },
+      {
+        id: 'snappyKick',
+        label: 'Snappy Kick',
+        settings: {
+          pitchDecay: 0.06,
+          octaves: 5,
+          envelope: { attack: 0.001, decay: 0.28, sustain: 0, release: 0.18 },
+        },
+        note: 'D1',
+      },
+    ],
+  },
 ];
 
 export const DEFAULT_SYNTH_CONFIG = {
