@@ -1446,12 +1446,20 @@ function drawImuPlotter() {
   const { ctx, width, height } = imuPlotter;
   ctx.clearRect(0, 0, width, height);
 
-  const leftPadding = 150;
-  const labelColumnX = 28;
-  const rightPadding = 36;
-  const topPadding = 28;
-  const bottomPadding = 36;
-  const axisGap = 32;
+  const isCompact = width < 720;
+  const isExtraCompact = width < 500;
+
+  const labelColumnX = isExtraCompact ? 14 : isCompact ? 20 : 28;
+  const labelColumnWidth = isExtraCompact
+    ? Math.max(72, width * 0.28)
+    : isCompact
+      ? Math.max(84, width * 0.26)
+      : 122;
+  let leftPadding = Math.min(width * 0.42, labelColumnX + labelColumnWidth);
+  const rightPadding = isExtraCompact ? Math.max(18, width * 0.05) : isCompact ? Math.max(24, width * 0.05) : 36;
+  const topPadding = isExtraCompact ? 20 : isCompact ? 24 : 28;
+  const bottomPadding = isExtraCompact ? 30 : isCompact ? 34 : 36;
+  const axisGap = isExtraCompact ? 24 : isCompact ? 28 : 32;
   const axes = IMU_AXES;
   const axisCount = axes.length;
   const availableHeight = Math.max(
@@ -1459,12 +1467,46 @@ function drawImuPlotter() {
     height - topPadding - bottomPadding - axisGap * Math.max(0, axisCount - 1),
   );
   const axisHeight = axisCount > 0 ? availableHeight / axisCount : 0;
-  const plotWidth = Math.max(0, width - leftPadding - rightPadding);
+  const desiredPlotRatio = isExtraCompact ? 0.62 : isCompact ? 0.58 : 0.54;
+  const minPlotWidth = Math.min(width * desiredPlotRatio, width - rightPadding - (labelColumnX + 48));
+  if (minPlotWidth > 0) {
+    const maxLeftPadding = Math.max(labelColumnX + 48, width - rightPadding - minPlotWidth);
+    leftPadding = Math.min(leftPadding, maxLeftPadding);
+  }
+  leftPadding = Math.max(leftPadding, labelColumnX + 60);
   const dataLength = imuPlotter.labels.length;
 
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+
+  const axisLabelFontSize = isExtraCompact ? 13 : isCompact ? 14 : 16;
+  const axisValueFontSize = isExtraCompact ? 11 : isCompact ? 12 : 13;
+  const axisValueOffset = axisLabelFontSize + 6;
+  ctx.font = `600 ${axisLabelFontSize}px 'Manrope', sans-serif`;
+  const maxLabelWidth = Math.max(
+    0,
+    ...axes.map((axis) => ctx.measureText(axis.label).width),
+  );
+  ctx.font = `500 ${axisValueFontSize}px 'Manrope', sans-serif`;
+  const maxAxisValueWidth = Math.max(
+    0,
+    ...axes.flatMap((axis) => [
+      ctx.measureText(`${axis.max}`).width,
+      ctx.measureText(`${axis.min}`).width,
+    ]),
+  );
+  const requiredLabelArea = Math.max(maxLabelWidth, maxAxisValueWidth) + 28;
+  if (leftPadding < labelColumnX + requiredLabelArea) {
+    leftPadding = labelColumnX + requiredLabelArea;
+    if (minPlotWidth > 0) {
+      const maxLeftPadding = Math.max(labelColumnX + 48, width - rightPadding - minPlotWidth);
+      leftPadding = Math.min(leftPadding, maxLeftPadding);
+    }
+  }
+  const plotWidth = Math.max(0, width - leftPadding - rightPadding);
+  const seriesStrokeWidth = isExtraCompact ? 3 : isCompact ? 2.6 : 2.2;
+  const pointRadius = isExtraCompact ? 5 : isCompact ? 4.5 : 4;
 
   axes.forEach((axis, index) => {
     const top = topPadding + index * (axisHeight + axisGap);
@@ -1509,16 +1551,16 @@ function drawImuPlotter() {
       ctx.stroke();
     }
 
-    ctx.font = "600 14px 'Manrope', sans-serif";
+    ctx.font = `600 ${axisLabelFontSize}px 'Manrope', sans-serif`;
     ctx.fillStyle = axis.labelColor || 'rgba(226, 232, 240, 0.85)';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText(axis.label, labelColumnX, top);
 
-    ctx.font = "500 12px 'Manrope', sans-serif";
+    ctx.font = `500 ${axisValueFontSize}px 'Manrope', sans-serif`;
     ctx.fillStyle = 'rgba(148, 163, 184, 0.75)';
     ctx.textBaseline = 'top';
-    ctx.fillText(`${axis.max}`, labelColumnX, top + 18);
+    ctx.fillText(`${axis.max}`, labelColumnX, top + axisValueOffset);
     ctx.textBaseline = 'bottom';
     ctx.fillText(`${axis.min}`, labelColumnX, bottom - 4);
 
@@ -1527,7 +1569,7 @@ function drawImuPlotter() {
     axisSeries.forEach((series) => {
       if (!dataLength) return;
       ctx.strokeStyle = series.color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = seriesStrokeWidth;
       ctx.beginPath();
       let hasPoint = false;
       for (let i = 0; i < dataLength; i += 1) {
@@ -1561,7 +1603,7 @@ function drawImuPlotter() {
         const lastY = mapImuValueToY(lastValue, axis, top, axisHeight);
         ctx.fillStyle = series.color;
         ctx.beginPath();
-        ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+        ctx.arc(lastX, lastY, pointRadius, 0, Math.PI * 2);
         ctx.fill();
       }
     });
