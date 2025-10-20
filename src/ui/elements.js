@@ -94,9 +94,6 @@ export const effectControlElements = {
   },
 };
 
-export const imuToggleBtn = byId('imuToggle');
-export const imuStatusEl = byId('imuStatus');
-
 export const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).reduce(
   (map, el) => {
     const key = el.dataset.imu;
@@ -111,3 +108,4 @@ export const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).r
 
 export const imuCubeEl = byId('imuCube');
 export const imuCombinedChartEl = byId('imuAllChart');
+export const imuResetOrientationBtn = byId('imuResetOrientation');

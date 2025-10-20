@@ -615,23 +615,14 @@ button.ghost:hover {
   border-color: rgba(248, 113, 113, 0.6);
 }
 
-.imu-status {
-  font-size: 0.8rem;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  color: rgba(224, 242, 254, 0.85);
-}
-.imu-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr);
+#imuPanel {
+  display: flex;
+  flex-direction: column;
   gap: 24px;
-  align-items: start;
 }
 
-.imu-orientation-card,
-.imu-chart-card {
+.imu-chart-card,
+.imu-orientation-area {
   background: rgba(15, 23, 42, 0.9);
   border-radius: 20px;
   padding: 20px;
@@ -639,33 +630,22 @@ button.ghost:hover {
   box-shadow: inset 0 0 0 1px rgba(30, 64, 175, 0.2);
 }
 
-.imu-orientation-card {
+.imu-orientation-area {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  max-width: 360px;
-  width: 100%;
-  justify-self: end;
-}
-
-.imu-chart-stack {
-  display: grid;
   gap: 20px;
-  grid-template-columns: minmax(0, 1fr);
 }
 
-.imu-card__header h3 {
-  margin: 0;
-  font-size: 1rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #bfdbfe;
+.imu-orientation-visual {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
 }
 
-.imu-card__header p {
-  margin: 4px 0 0;
-  font-size: 0.75rem;
-  color: rgba(191, 219, 254, 0.7);
+.imu-reset-btn {
+  align-self: flex-start;
 }
 
 .imu-scene {
@@ -982,23 +962,13 @@ button.ghost:hover {
     padding: 20px;
   }
 
-  .imu-layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
-  }
-
-  .imu-chart-stack {
-    order: 1;
-  }
-
-  .imu-orientation-card {
-    order: 2;
-    max-width: none;
-    justify-self: stretch;
-  }
-
   .imu-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .imu-orientation-visual {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 
@@ -1019,17 +989,16 @@ button.ghost:hover {
     min-height: 220px;
   }
 
-  .imu-layout {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
-
   .imu-cube {
     --cube-size: min(120px, 55vw);
   }
 
   .imu-summary {
     grid-template-columns: 1fr;
+  }
+
+  .imu-orientation-area {
+    gap: 16px;
   }
 
   .imu-chart-card canvas {
