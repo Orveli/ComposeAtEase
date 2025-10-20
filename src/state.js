@@ -22,11 +22,19 @@ export const imuState = {
   stats: { accelerationPeak: 0, rotationPeak: 0 },
   intervalSum: 0,
   intervalCount: 0,
+  orientationBaseline: { alpha: null, beta: null, gamma: null },
   data: {
     acc: { x: 0, y: 0, z: 0, magnitude: 0 },
     accG: { x: 0, y: 0, z: 0, magnitude: 0 },
     rotation: { alpha: 0, beta: 0, gamma: 0, magnitude: 0 },
     orientation: {
+      alpha: null,
+      beta: null,
+      gamma: null,
+      absolute: false,
+      headingSource: null,
+    },
+    orientationRaw: {
       alpha: null,
       beta: null,
       gamma: null,
