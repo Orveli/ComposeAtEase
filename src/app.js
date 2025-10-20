@@ -61,10 +61,11 @@ import {
   customPresetNameInput,
   saveCustomPresetBtn,
   effectControlElements,
+  imuToggleBtn,
+  imuStatusEl,
   imuValueEls,
   imuCubeEl,
   imuCombinedChartEl,
-  imuResetOrientationBtn,
 } from './ui/elements.js';
 import {
   formatSeconds,
@@ -1509,82 +1510,9 @@ function setImuValue(key, text) {
 }
 
 function updateImuStatus(message) {
-  if (!message) return;
-  console.info(`[IMU] ${message}`);
-}
-
-function normalizeHeadingValue(angle) {
-  if (!Number.isFinite(angle)) return null;
-  const normalized = ((angle % 360) + 360) % 360;
-  return normalized === 360 ? 0 : normalized;
-}
-
-function normalizeRelativeAngle(angle) {
-  if (!Number.isFinite(angle)) return null;
-  const normalized = ((angle + 180) % 360 + 360) % 360 - 180;
-  return normalized === -180 ? 180 : normalized;
-}
-
-function hasOrientationMeasurement(raw = {}) {
-  return (
-    Number.isFinite(raw.alpha) ||
-    Number.isFinite(raw.beta) ||
-    Number.isFinite(raw.gamma)
-  );
-}
-
-function deriveOrientationWithBaseline(raw = {}) {
-  const baseline = imuState.orientationBaseline || {};
-  const alphaRaw = Number.isFinite(raw.alpha) ? raw.alpha : null;
-  const betaRaw = Number.isFinite(raw.beta) ? raw.beta : null;
-  const gammaRaw = Number.isFinite(raw.gamma) ? raw.gamma : null;
-
-  const alpha =
-    alphaRaw == null
-      ? null
-      : Number.isFinite(baseline.alpha)
-      ? normalizeRelativeAngle(alphaRaw - baseline.alpha)
-      : normalizeHeadingValue(alphaRaw);
-
-  const beta =
-    betaRaw == null
-      ? null
-      : Number.isFinite(baseline.beta)
-      ? normalizeRelativeAngle(betaRaw - baseline.beta)
-      : normalizeRelativeAngle(betaRaw);
-
-  const gamma =
-    gammaRaw == null
-      ? null
-      : Number.isFinite(baseline.gamma)
-      ? normalizeRelativeAngle(gammaRaw - baseline.gamma)
-      : normalizeRelativeAngle(gammaRaw);
-
-  return {
-    alpha,
-    beta,
-    gamma,
-    absolute: Boolean(raw.absolute),
-    headingSource: raw.headingSource || null,
-  };
-}
-
-function setOrientationBaselineFromCurrent() {
-  const raw = imuState.data.orientationRaw;
-  if (!raw || !hasOrientationMeasurement(raw)) {
-    return false;
+  if (imuStatusEl) {
+    imuStatusEl.textContent = message;
   }
-
-  imuState.orientationBaseline = {
-    alpha: Number.isFinite(raw.alpha) ? raw.alpha : null,
-    beta: Number.isFinite(raw.beta) ? raw.beta : null,
-    gamma: Number.isFinite(raw.gamma) ? raw.gamma : null,
-  };
-
-  imuState.data.orientation = deriveOrientationWithBaseline(raw);
-  renderImuData();
-  updateImuStatus('Orientation baseline reset');
-  return true;
 }
 
 function updateImuOrientationCube(orientation = {}) {
@@ -1914,7 +1842,9 @@ function updateImuChartsData({ acceleration, rotation, orientation }) {
   const label = `${imuState.samples}`;
   const sample = {
     heading:
-      orientation && Number.isFinite(orientation.alpha) ? orientation.alpha : null,
+      orientation && Number.isFinite(orientation.alpha)
+        ? ((orientation.alpha % 360) + 360) % 360
+        : null,
     tilt: orientation && Number.isFinite(orientation.beta) ? orientation.beta : null,
     roll: orientation && Number.isFinite(orientation.gamma) ? orientation.gamma : null,
     accX: acceleration && Number.isFinite(acceleration.x) ? acceleration.x : null,
@@ -2062,7 +1992,6 @@ async function startImuTracking() {
   imuState.stats.rotationPeak = 0;
   imuState.intervalSum = 0;
   imuState.intervalCount = 0;
-  imuState.orientationBaseline = { alpha: null, beta: null, gamma: null };
   imuState.data.acc = { x: 0, y: 0, z: 0, magnitude: 0 };
   imuState.data.accG = { x: 0, y: 0, z: 0, magnitude: 0 };
   imuState.data.rotation = { alpha: 0, beta: 0, gamma: 0, magnitude: 0 };
@@ -2073,18 +2002,8 @@ async function startImuTracking() {
     absolute: false,
     headingSource: null,
   };
-  imuState.data.orientationRaw = {
-    alpha: null,
-    beta: null,
-    gamma: null,
-    absolute: false,
-    headingSource: null,
-  };
   imuState.data.interval = null;
   imuState.data.lastTimestamp = null;
-  if (imuResetOrientationBtn) {
-    imuResetOrientationBtn.disabled = true;
-  }
   resetImuVisuals();
   updateImuStatus('Waiting for motion data…');
   renderImuData();
@@ -2092,6 +2011,31 @@ async function startImuTracking() {
   window.addEventListener('devicemotion', handleDeviceMotion);
   window.addEventListener('deviceorientation', handleDeviceOrientation);
   window.addEventListener('deviceorientationabsolute', handleDeviceOrientation);
+  if (imuToggleBtn) {
+    imuToggleBtn.textContent = 'Stop Tracking';
+    imuToggleBtn.setAttribute('aria-pressed', 'true');
+  }
+}
+
+function stopImuTracking() {
+  if (!imuState.active) return;
+  imuState.active = false;
+  window.removeEventListener('devicemotion', handleDeviceMotion);
+  window.removeEventListener('deviceorientation', handleDeviceOrientation);
+  window.removeEventListener('deviceorientationabsolute', handleDeviceOrientation);
+  updateImuStatus('Tracking paused');
+  if (imuToggleBtn) {
+    imuToggleBtn.textContent = 'Start Tracking';
+    imuToggleBtn.setAttribute('aria-pressed', 'false');
+  }
+}
+
+async function toggleImuTracking() {
+  if (imuState.active) {
+    stopImuTracking();
+  } else {
+    await startImuTracking();
+  }
 }
 
 function handleDeviceMotion(event) {
@@ -2161,50 +2105,42 @@ function handleDeviceOrientation(event) {
   const alpha = normalizeHeadingFromEvent(event);
   const beta = typeof event.beta === 'number' ? event.beta : null;
   const gamma = typeof event.gamma === 'number' ? event.gamma : null;
-  const rawOrientation = {
+  imuState.data.orientation = {
     alpha,
     beta,
     gamma,
     absolute: resolveOrientationAbsolute(event),
     headingSource: typeof event.webkitCompassHeading === 'number' ? 'compass' : null,
   };
-  imuState.data.orientationRaw = rawOrientation;
-  imuState.data.orientation = deriveOrientationWithBaseline(rawOrientation);
-  if (imuResetOrientationBtn) {
-    imuResetOrientationBtn.disabled = !hasOrientationMeasurement(rawOrientation);
-  }
   renderImuData();
 }
 
 async function initializeImuPanel() {
-  if (!imuCombinedChartEl && !imuCubeEl) return;
+  if (!imuToggleBtn || !imuStatusEl) return;
   setupImuVisuals();
-
-  if (imuResetOrientationBtn) {
-    imuResetOrientationBtn.disabled = true;
-    imuResetOrientationBtn.addEventListener('click', () => {
-      if (!setOrientationBaselineFromCurrent()) {
-        updateImuStatus('Orientation data unavailable for baseline reset');
-      }
-    });
-  }
-
   const supported = 'DeviceMotionEvent' in window || 'DeviceOrientationEvent' in window;
   if (!supported) {
-    if (imuResetOrientationBtn) {
-      imuResetOrientationBtn.disabled = true;
-    }
+    imuToggleBtn.disabled = true;
+    imuToggleBtn.setAttribute('aria-pressed', 'false');
     updateImuStatus('IMU sensors are not available in this browser');
     return;
   }
-
+  imuToggleBtn.addEventListener('click', toggleImuTracking);
+  imuToggleBtn.setAttribute('aria-pressed', 'false');
+  updateImuStatus('Tap “Start Tracking” to enable sensors');
   renderImuData();
 
   try {
     await startImuTracking();
   } catch (error) {
     console.error('Automatic IMU start failed', error);
-    updateImuStatus('Automatic IMU start failed');
+  }
+
+  if (!imuState.active) {
+    const statusMessage = (imuStatusEl.textContent || '').trim();
+    if (!statusMessage || statusMessage === 'Tap “Start Tracking” to enable sensors') {
+      updateImuStatus('Tap “Start Tracking” to enable sensors');
+    }
   }
 }
 
