@@ -12,7 +12,7 @@ export const DRUM_LANES = [
     samples: [
       {
         id: 'tightHat',
-        label: 'Tight Hat',
+        label: 'Hi-Hat Closed',
         settings: {
           frequency: 620,
           harmonicity: 6.2,
@@ -23,7 +23,7 @@ export const DRUM_LANES = [
       },
       {
         id: 'openHat',
-        label: 'Open Hat',
+        label: 'Hi-Hat Open',
         settings: {
           frequency: 520,
           harmonicity: 5.8,
