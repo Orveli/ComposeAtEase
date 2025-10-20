@@ -50,6 +50,7 @@ import {
   drumPanelEl,
   synthTitleEl,
   drumTitleEl,
+  drumSampleControlsEl,
   synthStatusEl,
   oscillatorSelect,
   filterTypeSelect,
@@ -119,6 +120,113 @@ function getActiveTrack() {
 
 function getSynthTracks() {
   return state.tracks.filter((track) => track.type === 'synth');
+}
+
+const DRUM_ENGINE_DEFAULTS = {
+  membrane: {
+    pitchDecay: 0.008,
+    octaves: 4,
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 },
+  },
+  noise: {
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.15 },
+  },
+  metal: {
+    frequency: 400,
+    harmonicity: 5.1,
+    modulationIndex: 32,
+    resonance: 4000,
+    envelope: { attack: 0.001, decay: 0.1, release: 0.05 },
+  },
+};
+
+function mergeDrumOptions(base = {}, overrides = {}) {
+  const keys = new Set([...Object.keys(base || {}), ...Object.keys(overrides || {})]);
+  const result = {};
+  keys.forEach((key) => {
+    const baseValue = base ? base[key] : undefined;
+    const overrideValue = overrides ? overrides[key] : undefined;
+    if (overrideValue && typeof overrideValue === 'object' && !Array.isArray(overrideValue)) {
+      result[key] = mergeDrumOptions(baseValue, overrideValue);
+    } else if (overrideValue !== undefined) {
+      result[key] = overrideValue;
+    } else if (baseValue && typeof baseValue === 'object' && !Array.isArray(baseValue)) {
+      result[key] = mergeDrumOptions(baseValue, {});
+    } else {
+      result[key] = baseValue;
+    }
+  });
+  return result;
+}
+
+function getDrumLaneById(id) {
+  return DRUM_LANES.find((lane) => lane.id === id) || null;
+}
+
+function ensureDrumSamples(track) {
+  if (!track || track.type !== 'drum') return;
+  if (!track.drumSamples) {
+    track.drumSamples = {};
+  }
+  DRUM_LANES.forEach((lane) => {
+    if (!track.drumSamples[lane.id] || !lane.samples?.length) {
+      track.drumSamples[lane.id] = lane.samples?.[0]?.id || null;
+    }
+  });
+}
+
+function getDrumSampleSelection(track, laneId) {
+  ensureDrumSamples(track);
+  const lane = getDrumLaneById(laneId);
+  if (!lane) return null;
+  const selection = track.drumSamples?.[laneId];
+  if (selection && lane.samples?.some((sample) => sample.id === selection)) {
+    return selection;
+  }
+  const fallback = lane.samples?.[0]?.id || null;
+  if (fallback) {
+    track.drumSamples[laneId] = fallback;
+  }
+  return fallback;
+}
+
+function getDrumSampleById(lane, sampleId) {
+  if (!lane?.samples?.length) {
+    return null;
+  }
+  return lane.samples.find((sample) => sample.id === sampleId) || lane.samples[0] || null;
+}
+
+function getDrumSampleDisplayName(lane, sampleId) {
+  const sample = getDrumSampleById(lane, sampleId);
+  return sample?.label || lane?.label || 'Drum';
+}
+
+function createDrumVoice(lane, sample) {
+  const engine = sample?.engine || lane?.engine || 'membrane';
+  const defaults = DRUM_ENGINE_DEFAULTS[engine] || {};
+  const settings = mergeDrumOptions(defaults, sample?.settings || {});
+  const output = {};
+  if (engine === 'noise') {
+    const node = new Tone.NoiseSynth(settings).connect(masterVolume);
+    output.node = node;
+    output.trigger = (duration, time) => node.triggerAttackRelease(duration, time);
+    return output;
+  }
+  if (engine === 'metal') {
+    const node = new Tone.MetalSynth(settings).connect(masterVolume);
+    const note = sample?.note || lane?.note || lane?.defaultNote || 'C6';
+    output.node = node;
+    output.trigger = (duration, time) => node.triggerAttackRelease(note, duration, time);
+    return output;
+  }
+  const node = new Tone.MembraneSynth(settings).connect(masterVolume);
+  const note = sample?.note || lane?.note || lane?.defaultNote || 'C2';
+  output.node = node;
+  output.trigger = (duration, time) => node.triggerAttackRelease(note, duration, time);
+  return output;
 }
 
 function cloneSynthConfig(config) {
@@ -251,11 +359,16 @@ function createSynthTrack(name, presetId = DEFAULT_SYNTH_PRESET) {
 }
 
 function createDrumTrack(name) {
+  const drumSamples = {};
+  DRUM_LANES.forEach((lane) => {
+    drumSamples[lane.id] = lane.samples?.[0]?.id || null;
+  });
   return {
     id: crypto.randomUUID(),
     type: 'drum',
     name,
     notes: [],
+    drumSamples,
   };
 }
 
@@ -273,7 +386,11 @@ function disposeInstrument(trackId) {
       instrument.node.dispose();
     }
   } else if (instrument.type === 'drum') {
-    Object.values(instrument.nodes).forEach((node) => node.dispose());
+    Object.values(instrument.nodes).forEach((voice) => {
+      if (voice?.node && typeof voice.node.dispose === 'function') {
+        voice.node.dispose();
+      }
+    });
   }
   trackInstruments.delete(trackId);
 }
@@ -351,21 +468,14 @@ function ensureInstrumentForTrack(track) {
     const { synth, nodes } = createSynthInstrument(track.synthConfig);
     trackInstruments.set(track.id, { type: 'synth', node: synth, nodes });
   } else if (track.type === 'drum') {
+    ensureDrumSamples(track);
     disposeInstrument(track.id);
-    const kit = {
-      kick: new Tone.MembraneSynth({ envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.2 } }).connect(masterVolume),
-      snare: new Tone.NoiseSynth({
-        noise: { type: 'white' },
-        envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.15 },
-      }).connect(masterVolume),
-      hat: new Tone.MetalSynth({
-        frequency: 400,
-        envelope: { attack: 0.001, decay: 0.1, release: 0.05 },
-        harmonicity: 5.1,
-        modulationIndex: 32,
-        resonance: 4000,
-      }).connect(masterVolume),
-    };
+    const kit = {};
+    DRUM_LANES.forEach((lane) => {
+      const selectedSampleId = getDrumSampleSelection(track, lane.id);
+      const sample = getDrumSampleById(lane, selectedSampleId);
+      kit[lane.id] = createDrumVoice(lane, sample);
+    });
     trackInstruments.set(track.id, { type: 'drum', nodes: kit });
   }
 }
@@ -767,12 +877,57 @@ function renderSynthNotes(track) {
 }
 
 function renderDrumPanel(track) {
+  ensureDrumSamples(track);
   drumTitleEl.textContent = track.name;
+  renderDrumSampleControls(track);
   renderDrumLanes(track);
   renderDrumTicks();
 }
 
+function renderDrumSampleControls(track) {
+  if (!drumSampleControlsEl) return;
+  ensureDrumSamples(track);
+  drumSampleControlsEl.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  DRUM_LANES.forEach((lane) => {
+    const selectionId = getDrumSampleSelection(track, lane.id);
+    const control = document.createElement('label');
+    control.className = 'drum-controls__item';
+    const title = document.createElement('span');
+    title.className = 'drum-controls__label';
+    title.textContent = lane.label;
+    control.appendChild(title);
+    const select = document.createElement('select');
+    select.className = 'drum-controls__select';
+    if (lane.samples?.length) {
+      lane.samples.forEach((sample) => {
+        const option = document.createElement('option');
+        option.value = sample.id;
+        option.textContent = sample.label;
+        select.appendChild(option);
+      });
+      select.value = selectionId || lane.samples[0].id;
+    } else {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Unavailable';
+      select.appendChild(option);
+      select.disabled = true;
+    }
+    select.disabled = select.options.length <= 1;
+    select.addEventListener('change', (event) => {
+      track.drumSamples[lane.id] = event.target.value;
+      ensureInstrumentForTrack(track);
+      renderDrumLanes(track);
+    });
+    control.appendChild(select);
+    fragment.appendChild(control);
+  });
+  drumSampleControlsEl.appendChild(fragment);
+}
+
 function renderDrumLanes(track) {
+  ensureDrumSamples(track);
   drumLanesEl.innerHTML = '';
   drumLanesEl.style.gridTemplateRows = `repeat(${DRUM_LANES.length}, 1fr)`;
   DRUM_LANES.forEach((lane) => {
@@ -781,7 +936,12 @@ function renderDrumLanes(track) {
     laneEl.dataset.lane = lane.id;
     const label = document.createElement('strong');
     label.textContent = lane.label;
+    const sampleName = getDrumSampleDisplayName(lane, getDrumSampleSelection(track, lane.id));
+    const sampleLabel = document.createElement('span');
+    sampleLabel.className = 'lane-sample';
+    sampleLabel.textContent = sampleName;
     laneEl.appendChild(label);
+    laneEl.appendChild(sampleLabel);
     laneEl.addEventListener('pointerdown', handleDrumLanePointerDown);
     laneEl.addEventListener('pointermove', handleDrumLanePointerMove);
     laneEl.addEventListener('pointerup', handleDrumLanePointerUp);
@@ -809,7 +969,9 @@ function renderDrumNotes(track) {
     block.dataset.id = note.id;
     block.dataset.type = 'drum';
     block.dataset.trackId = track.id;
-    block.textContent = DRUM_LANES[laneIndex].label;
+    const laneInfo = DRUM_LANES[laneIndex];
+    const sampleName = getDrumSampleDisplayName(laneInfo, getDrumSampleSelection(track, laneInfo.id));
+    block.textContent = sampleName;
     const left = note.slot * slotWidth;
     block.style.left = `${left}px`;
     block.style.width = `${Math.max(slotWidth * note.len, slotWidth * 0.8)}px`;
@@ -1255,12 +1417,12 @@ function triggerDrum(trackId, note, time) {
   const instrument = trackInstruments.get(trackId);
   if (!instrument || instrument.type !== 'drum') return;
   const duration = note.len * getGridDurationSeconds();
-  if (note.lane === 'kick') {
-    instrument.nodes.kick.triggerAttackRelease('C2', duration, time);
-  } else if (note.lane === 'snare') {
-    instrument.nodes.snare.triggerAttackRelease(duration, time);
-  } else {
-    instrument.nodes.hat.triggerAttackRelease('C6', duration, time);
+  const voice = instrument.nodes[note.lane];
+  if (!voice) return;
+  if (typeof voice.trigger === 'function') {
+    voice.trigger(duration, time);
+  } else if (voice.node?.triggerAttackRelease) {
+    voice.node.triggerAttackRelease(duration, time);
   }
   flashNote(note.id);
 }
