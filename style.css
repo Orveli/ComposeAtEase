@@ -748,6 +748,7 @@ button.ghost:hover {
   align-items: start;
 }
 
+.imu-start-btn,
 .imu-reset-btn {
   align-self: flex-start;
 }

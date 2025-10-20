@@ -110,3 +110,4 @@ export const imuValueEls = Array.from(document.querySelectorAll('[data-imu]')).r
 export const imuCubeEl = byId('imuCube');
 export const imuCombinedChartEl = byId('imuAllChart');
 export const imuResetOrientationBtn = byId('imuResetOrientation');
+export const imuStartTrackingBtn = byId('imuStartTracking');

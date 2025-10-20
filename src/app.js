@@ -65,6 +65,7 @@ import {
   imuCubeEl,
   imuCombinedChartEl,
   imuResetOrientationBtn,
+  imuStartTrackingBtn,
 } from './ui/elements.js';
 import {
   formatSeconds,
@@ -2383,17 +2384,74 @@ async function initializeImuPanel() {
     if (imuResetOrientationBtn) {
       imuResetOrientationBtn.disabled = true;
     }
+    if (imuStartTrackingBtn) {
+      imuStartTrackingBtn.hidden = true;
+      imuStartTrackingBtn.disabled = true;
+    }
     updateImuStatus('IMU sensors are not available in this browser');
     return;
   }
 
   renderImuData();
 
-  try {
-    await startImuTracking();
-  } catch (error) {
-    console.error('Automatic IMU start failed', error);
-    updateImuStatus('Automatic IMU start failed');
+  const motionSupported = 'DeviceMotionEvent' in window;
+  const orientationSupported = 'DeviceOrientationEvent' in window;
+  const requiresUserGesture =
+    (motionSupported &&
+      window.DeviceMotionEvent &&
+      typeof window.DeviceMotionEvent.requestPermission === 'function') ||
+    (orientationSupported &&
+      window.DeviceOrientationEvent &&
+      typeof window.DeviceOrientationEvent.requestPermission === 'function');
+
+  const showStartButton = () => {
+    if (!imuStartTrackingBtn) return;
+    imuStartTrackingBtn.hidden = false;
+    imuStartTrackingBtn.disabled = false;
+  };
+
+  const hideStartButton = () => {
+    if (!imuStartTrackingBtn) return;
+    imuStartTrackingBtn.hidden = true;
+  };
+
+  const attemptImuStart = async (triggeredByUser = false) => {
+    if (imuState.active) {
+      hideStartButton();
+      return;
+    }
+    if (imuStartTrackingBtn && triggeredByUser) {
+      imuStartTrackingBtn.disabled = true;
+    }
+    try {
+      await startImuTracking();
+    } catch (error) {
+      console.error('IMU start attempt failed', error);
+    }
+    if (imuState.active) {
+      hideStartButton();
+    } else if (imuStartTrackingBtn) {
+      imuStartTrackingBtn.disabled = false;
+      showStartButton();
+    }
+  };
+
+  if (imuStartTrackingBtn) {
+    imuStartTrackingBtn.addEventListener('click', () => {
+      attemptImuStart(true);
+    });
+  }
+
+  if (requiresUserGesture) {
+    showStartButton();
+    updateImuStatus('Tap Start Tracking to enable motion sensors');
+    return;
+  }
+
+  await attemptImuStart(false);
+  if (!imuState.active) {
+    showStartButton();
+    updateImuStatus('Automatic IMU start failed; tap Start Tracking to retry');
   }
 }
 
