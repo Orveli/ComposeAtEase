@@ -50,7 +50,6 @@ import {
   drumPanelEl,
   synthTitleEl,
   drumTitleEl,
-  drumSampleControlsEl,
   synthStatusEl,
   oscillatorSelect,
   filterTypeSelect,
@@ -135,27 +134,30 @@ function closeDrumSampleMenu() {
 function openDrumSampleMenu(track, laneId, position) {
   closeDrumSampleMenu();
   const lane = getDrumLaneById(laneId);
-  if (!lane?.samples?.length) return;
+  if (!lane || !DRUM_SAMPLE_LIBRARY.length) return;
   const host = document.querySelector('.app') || document.body;
   const menu = document.createElement('div');
   menu.className = 'drum-sample-menu';
   const header = document.createElement('div');
   header.className = 'drum-sample-menu__header';
-  header.textContent = `${lane.label} Samples`;
+  header.textContent = 'Select Drum Sample';
   menu.appendChild(header);
   const currentSelection = getDrumSampleSelection(track, laneId);
-  lane.samples.forEach((sample) => {
+  DRUM_SAMPLE_LIBRARY.forEach((sample) => {
     const option = document.createElement('button');
     option.type = 'button';
     option.className = 'drum-sample-menu__option';
     option.textContent = sample.label;
+    const sourceLane = getDrumLaneById(sample.sourceLaneId);
+    if (sourceLane?.label) {
+      option.title = sourceLane.label;
+    }
     if (sample.id === currentSelection) {
       option.classList.add('selected');
     }
     option.addEventListener('click', () => {
       track.drumSamples[laneId] = sample.id;
       ensureInstrumentForTrack(track);
-      renderDrumSampleControls(track);
       renderDrumLanes(track);
       rebuildSequences();
       closeDrumSampleMenu();
@@ -231,6 +233,36 @@ function mergeDrumOptions(base = {}, overrides = {}) {
   return result;
 }
 
+const DRUM_SAMPLE_LIBRARY = (() => {
+  const entries = [];
+  DRUM_LANES.forEach((lane) => {
+    (lane.samples || []).forEach((sample) => {
+      if (!sample?.id) return;
+      entries.push({
+        id: sample.id,
+        label: sample.label || 'Sample',
+        engine: sample.engine || lane.engine,
+        settings: sample.settings ? mergeDrumOptions({}, sample.settings) : undefined,
+        note: sample.note ?? lane.note ?? lane.defaultNote,
+        sourceLaneId: lane.id,
+      });
+    });
+  });
+  return entries.sort((a, b) => a.label.localeCompare(b.label));
+})();
+
+const DRUM_SAMPLE_MAP = new Map(DRUM_SAMPLE_LIBRARY.map((sample) => [sample.id, sample]));
+
+function getDefaultDrumSampleId(lane) {
+  if (lane?.samples?.length) {
+    const [first] = lane.samples;
+    if (first?.id) {
+      return first.id;
+    }
+  }
+  return DRUM_SAMPLE_LIBRARY[0]?.id || null;
+}
+
 function getDrumLaneById(id) {
   return DRUM_LANES.find((lane) => lane.id === id) || null;
 }
@@ -241,37 +273,38 @@ function ensureDrumSamples(track) {
     track.drumSamples = {};
   }
   DRUM_LANES.forEach((lane) => {
-    if (!track.drumSamples[lane.id] || !lane.samples?.length) {
-      track.drumSamples[lane.id] = lane.samples?.[0]?.id || null;
+    const currentId = track.drumSamples[lane.id];
+    if (currentId && DRUM_SAMPLE_MAP.has(currentId)) {
+      return;
     }
+    track.drumSamples[lane.id] = getDefaultDrumSampleId(lane);
   });
 }
 
 function getDrumSampleSelection(track, laneId) {
   ensureDrumSamples(track);
-  const lane = getDrumLaneById(laneId);
-  if (!lane) return null;
-  const selection = track.drumSamples?.[laneId];
-  if (selection && lane.samples?.some((sample) => sample.id === selection)) {
+  const selection = track?.drumSamples?.[laneId];
+  if (selection && DRUM_SAMPLE_MAP.has(selection)) {
     return selection;
   }
-  const fallback = lane.samples?.[0]?.id || null;
+  const lane = getDrumLaneById(laneId);
+  const fallback = getDefaultDrumSampleId(lane);
   if (fallback) {
     track.drumSamples[laneId] = fallback;
   }
   return fallback;
 }
 
-function getDrumSampleById(lane, sampleId) {
-  if (!lane?.samples?.length) {
-    return null;
-  }
-  return lane.samples.find((sample) => sample.id === sampleId) || lane.samples[0] || null;
+function getDrumSampleById(sampleId) {
+  return DRUM_SAMPLE_MAP.get(sampleId) || null;
 }
 
-function getDrumSampleDisplayName(lane, sampleId) {
-  const sample = getDrumSampleById(lane, sampleId);
-  return sample?.label || lane?.label || 'Drum';
+function getDrumSampleDisplayName(sampleId, lane) {
+  const sample = getDrumSampleById(sampleId);
+  if (sample?.label) {
+    return sample.label;
+  }
+  return lane?.label || 'Drum';
 }
 
 function createDrumVoice(lane, sample) {
@@ -431,7 +464,7 @@ function createSynthTrack(name, presetId = DEFAULT_SYNTH_PRESET) {
 function createDrumTrack(name) {
   const drumSamples = {};
   DRUM_LANES.forEach((lane) => {
-    drumSamples[lane.id] = lane.samples?.[0]?.id || null;
+    drumSamples[lane.id] = getDefaultDrumSampleId(lane);
   });
   return {
     id: crypto.randomUUID(),
@@ -543,7 +576,7 @@ function ensureInstrumentForTrack(track) {
     const kit = {};
     DRUM_LANES.forEach((lane) => {
       const selectedSampleId = getDrumSampleSelection(track, lane.id);
-      const sample = getDrumSampleById(lane, selectedSampleId);
+      const sample = getDrumSampleById(selectedSampleId);
       kit[lane.id] = createDrumVoice(lane, sample);
     });
     trackInstruments.set(track.id, { type: 'drum', nodes: kit });
@@ -951,51 +984,8 @@ function renderDrumPanel(track) {
   closeDrumSampleMenu();
   ensureDrumSamples(track);
   drumTitleEl.textContent = track.name;
-  renderDrumSampleControls(track);
   renderDrumLanes(track);
   renderDrumTicks();
-}
-
-function renderDrumSampleControls(track) {
-  if (!drumSampleControlsEl) return;
-  ensureDrumSamples(track);
-  drumSampleControlsEl.innerHTML = '';
-  const fragment = document.createDocumentFragment();
-  DRUM_LANES.forEach((lane) => {
-    const selectionId = getDrumSampleSelection(track, lane.id);
-    const control = document.createElement('label');
-    control.className = 'drum-controls__item';
-    const title = document.createElement('span');
-    title.className = 'drum-controls__label';
-    title.textContent = lane.label;
-    control.appendChild(title);
-    const select = document.createElement('select');
-    select.className = 'drum-controls__select';
-    if (lane.samples?.length) {
-      lane.samples.forEach((sample) => {
-        const option = document.createElement('option');
-        option.value = sample.id;
-        option.textContent = sample.label;
-        select.appendChild(option);
-      });
-      select.value = selectionId || lane.samples[0].id;
-    } else {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = 'Unavailable';
-      select.appendChild(option);
-      select.disabled = true;
-    }
-    select.disabled = select.options.length <= 1;
-    select.addEventListener('change', (event) => {
-      track.drumSamples[lane.id] = event.target.value;
-      ensureInstrumentForTrack(track);
-      renderDrumLanes(track);
-    });
-    control.appendChild(select);
-    fragment.appendChild(control);
-  });
-  drumSampleControlsEl.appendChild(fragment);
 }
 
 function renderDrumLanes(track) {
@@ -1006,14 +996,10 @@ function renderDrumLanes(track) {
     const laneEl = document.createElement('div');
     laneEl.className = 'lane label-drums';
     laneEl.dataset.lane = lane.id;
+    const selectionId = getDrumSampleSelection(track, lane.id);
     const label = document.createElement('strong');
-    label.textContent = lane.label;
-    const sampleName = getDrumSampleDisplayName(lane, getDrumSampleSelection(track, lane.id));
-    const sampleLabel = document.createElement('span');
-    sampleLabel.className = 'lane-sample';
-    sampleLabel.textContent = sampleName;
+    label.textContent = getDrumSampleDisplayName(selectionId, lane);
     laneEl.appendChild(label);
-    laneEl.appendChild(sampleLabel);
     laneEl.addEventListener('pointerdown', handleDrumLanePointerDown);
     laneEl.addEventListener('pointermove', handleDrumLanePointerMove);
     laneEl.addEventListener('pointerup', handleDrumLanePointerUp);
@@ -1042,8 +1028,14 @@ function renderDrumNotes(track) {
     block.dataset.type = 'drum';
     block.dataset.trackId = track.id;
     const laneInfo = DRUM_LANES[laneIndex];
-    const sampleName = getDrumSampleDisplayName(laneInfo, getDrumSampleSelection(track, laneInfo.id));
-    block.textContent = sampleName;
+    const selectionId = getDrumSampleSelection(track, laneInfo.id);
+    const sampleName = getDrumSampleDisplayName(selectionId, laneInfo);
+    block.textContent = '';
+    if (sampleName) {
+      block.setAttribute('aria-label', sampleName);
+    } else {
+      block.removeAttribute('aria-label');
+    }
     const left = note.slot * slotWidth;
     block.style.left = `${left}px`;
     block.style.width = `${Math.max(slotWidth * note.len, slotWidth * 0.8)}px`;
