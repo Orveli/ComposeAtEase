@@ -255,54 +255,6 @@
             </div>
           </header>
           <div class="imu-layout">
-            <article class="imu-orientation-card">
-              <header class="imu-card__header">
-                <h3>Spatial orientation</h3>
-                <p>Live device attitude</p>
-              </header>
-              <div class="imu-scene" aria-hidden="true">
-                <div class="imu-cube" id="imuCube">
-                  <span class="imu-face imu-face--front">Y+</span>
-                  <span class="imu-face imu-face--back">Y−</span>
-                  <span class="imu-face imu-face--left">X−</span>
-                  <span class="imu-face imu-face--right">X+</span>
-                  <span class="imu-face imu-face--top">Z+</span>
-                  <span class="imu-face imu-face--bottom">Z−</span>
-                </div>
-              </div>
-              <div class="imu-orientation-values">
-                <div>
-                  <span>Heading</span>
-                  <strong data-imu="ori-alpha">0.0°</strong>
-                </div>
-                <div>
-                  <span>Tilt (β)</span>
-                  <strong data-imu="ori-beta">0.0°</strong>
-                </div>
-                <div>
-                  <span>Roll (γ)</span>
-                  <strong data-imu="ori-gamma">0.0°</strong>
-                </div>
-                <div>
-                  <span>Absolute</span>
-                  <strong data-imu="ori-absolute">--</strong>
-                </div>
-              </div>
-              <dl class="imu-summary">
-                <div>
-                  <dt>Samples</dt>
-                  <dd data-imu="samples">0</dd>
-                </div>
-                <div>
-                  <dt>Avg interval</dt>
-                  <dd data-imu="interval">--</dd>
-                </div>
-                <div>
-                  <dt>Last update</dt>
-                  <dd data-imu="timestamp">--</dd>
-                </div>
-              </dl>
-            </article>
             <div class="imu-chart-stack">
               <article class="imu-chart-card">
                 <header class="imu-card__header">
@@ -378,6 +330,54 @@
                 </footer>
               </article>
             </div>
+            <aside class="imu-orientation-card" aria-labelledby="imuOrientationTitle">
+              <header class="imu-card__header">
+                <h3 id="imuOrientationTitle">Spatial orientation</h3>
+                <p>Live device attitude</p>
+              </header>
+              <div class="imu-scene" aria-hidden="true">
+                <div class="imu-cube" id="imuCube">
+                  <span class="imu-face imu-face--front">Y+</span>
+                  <span class="imu-face imu-face--back">Y−</span>
+                  <span class="imu-face imu-face--left">X−</span>
+                  <span class="imu-face imu-face--right">X+</span>
+                  <span class="imu-face imu-face--top">Z+</span>
+                  <span class="imu-face imu-face--bottom">Z−</span>
+                </div>
+              </div>
+              <div class="imu-orientation-values">
+                <div>
+                  <span>Heading</span>
+                  <strong data-imu="ori-alpha">0.0°</strong>
+                </div>
+                <div>
+                  <span>Tilt (β)</span>
+                  <strong data-imu="ori-beta">0.0°</strong>
+                </div>
+                <div>
+                  <span>Roll (γ)</span>
+                  <strong data-imu="ori-gamma">0.0°</strong>
+                </div>
+                <div>
+                  <span>Absolute</span>
+                  <strong data-imu="ori-absolute">--</strong>
+                </div>
+              </div>
+              <dl class="imu-summary">
+                <div>
+                  <dt>Samples</dt>
+                  <dd data-imu="samples">0</dd>
+                </div>
+                <div>
+                  <dt>Avg interval</dt>
+                  <dd data-imu="interval">--</dd>
+                </div>
+                <div>
+                  <dt>Last update</dt>
+                  <dd data-imu="timestamp">--</dd>
+                </div>
+              </dl>
+            </aside>
           </div>
         </section>
       </main>
