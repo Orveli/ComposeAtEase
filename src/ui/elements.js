@@ -9,7 +9,6 @@ export const drumGridEl = byId('drumGrid');
 export const drumLanesEl = byId('drumLanes');
 export const drumTicksEl = byId('drumTicks');
 export const drumPlayheadEl = byId('drumPlayhead');
-export const drumSampleControlsEl = byId('drumSampleControls');
 
 export const playBtn = byId('playBtn');
 export const stopBtn = byId('stopBtn');
