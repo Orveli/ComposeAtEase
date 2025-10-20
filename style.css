@@ -625,9 +625,9 @@ button.ghost:hover {
 }
 .imu-layout {
   display: grid;
-  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr);
   gap: 24px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .imu-orientation-card,
@@ -643,12 +643,15 @@ button.ghost:hover {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  max-width: 360px;
+  width: 100%;
+  justify-self: end;
 }
 
 .imu-chart-stack {
   display: grid;
   gap: 20px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .imu-card__header h3 {
@@ -676,7 +679,7 @@ button.ghost:hover {
 }
 
 .imu-cube {
-  --cube-size: min(200px, 60vw);
+  --cube-size: min(150px, 40vw);
   position: relative;
   width: var(--cube-size);
   height: var(--cube-size);
@@ -816,13 +819,38 @@ button.ghost:hover {
 
 .imu-chart-card canvas {
   width: 100%;
-  height: clamp(280px, 45vh, 420px);
+  height: clamp(1400px, 160vh, 2000px);
   background: rgba(15, 23, 42, 0.8);
   border-radius: 18px;
   padding: 16px;
   box-shadow:
     inset 0 0 0 1px rgba(37, 99, 235, 0.24),
     0 16px 36px rgba(15, 23, 42, 0.45);
+}
+
+[data-imu] {
+  font-family: 'JetBrains Mono', 'Fira Mono', 'Menlo', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+  white-space: nowrap;
+}
+
+.imu-legend__item span[data-imu] {
+  display: inline-flex;
+  justify-content: flex-end;
+  min-width: 6ch;
+}
+
+.imu-orientation-values strong[data-imu] {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 7ch;
+}
+
+.imu-chart-footer strong[data-imu] {
+  display: inline-flex;
+  justify-content: flex-end;
+  min-width: 7ch;
 }
 
 .imu-chart-card {
@@ -955,7 +983,18 @@ button.ghost:hover {
   }
 
   .imu-layout {
-    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .imu-chart-stack {
+    order: 1;
+  }
+
+  .imu-orientation-card {
+    order: 2;
+    max-width: none;
+    justify-self: stretch;
   }
 
   .imu-summary {
@@ -985,11 +1024,15 @@ button.ghost:hover {
     gap: 18px;
   }
 
+  .imu-cube {
+    --cube-size: min(120px, 55vw);
+  }
+
   .imu-summary {
     grid-template-columns: 1fr;
   }
 
   .imu-chart-card canvas {
-    height: clamp(220px, 55vh, 320px);
+    height: clamp(1100px, 140vh, 1500px);
   }
 }
