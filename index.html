@@ -246,95 +246,15 @@
             <div class="playhead" id="drumPlayhead"></div>
           </div>
         </section>
-        <section class="panel" id="imuPanel">
-          <header class="panel-header">
-            <h2>Device IMU</h2>
-            <div class="panel-tools">
-              <button id="imuToggle" class="toggle-btn" aria-pressed="false">Start Tracking</button>
-              <div class="imu-status" id="imuStatus" aria-live="polite">Awaiting permission</div>
-            </div>
-          </header>
-          <div class="imu-layout">
-            <div class="imu-chart-stack">
-              <article class="imu-chart-card">
-                <header class="imu-card__header">
-                  <h3>Unified sensor plot</h3>
-                  <p>Tilt, roll, heading, acceleration, and rotation rate</p>
-                </header>
-                <canvas
-                  id="imuAllChart"
-                  aria-label="Orientation, acceleration, and rotation plotted over time"
-                  role="img"
-                ></canvas>
-                <div class="imu-legend-groups">
-                  <section>
-                    <h4>Orientation</h4>
-                    <ul class="imu-legend">
-                      <li class="imu-legend__item imu-legend__item--heading">
-                        Heading <span data-imu="ori-alpha">0.0°</span>
-                      </li>
-                      <li class="imu-legend__item imu-legend__item--tilt">
-                        Tilt <span data-imu="ori-beta">0.0°</span>
-                      </li>
-                      <li class="imu-legend__item imu-legend__item--roll">
-                        Roll <span data-imu="ori-gamma">0.0°</span>
-                      </li>
-                    </ul>
-                  </section>
-                  <section>
-                    <h4>Linear acceleration</h4>
-                    <ul class="imu-legend">
-                      <li class="imu-legend__item imu-legend__item--x">
-                        X <span data-imu="acc-x">0.00</span>
-                      </li>
-                      <li class="imu-legend__item imu-legend__item--y">
-                        Y <span data-imu="acc-y">0.00</span>
-                      </li>
-                      <li class="imu-legend__item imu-legend__item--z">
-                        Z <span data-imu="acc-z">0.00</span>
-                      </li>
-                    </ul>
-                  </section>
-                  <section>
-                    <h4>Rotation rate</h4>
-                    <ul class="imu-legend">
-                      <li class="imu-legend__item imu-legend__item--rot-alpha">
-                        α <span data-imu="rot-alpha">0.0</span>
-                      </li>
-                      <li class="imu-legend__item imu-legend__item--rot-beta">
-                        β <span data-imu="rot-beta">0.0</span>
-                      </li>
-                      <li class="imu-legend__item imu-legend__item--rot-gamma">
-                        γ <span data-imu="rot-gamma">0.0</span>
-                      </li>
-                    </ul>
-                  </section>
-                </div>
-                <footer class="imu-chart-footer">
-                  <div>
-                    <span>Accel magnitude</span>
-                    <strong data-imu="acc-mag">0.00</strong>
-                  </div>
-                  <div>
-                    <span>Accel peak</span>
-                    <strong data-imu="acc-peak">0.00</strong>
-                  </div>
-                  <div>
-                    <span>Rotation magnitude</span>
-                    <strong data-imu="rot-mag">0.0</strong>
-                  </div>
-                  <div>
-                    <span>Rotation peak</span>
-                    <strong data-imu="rot-peak">0.0</strong>
-                  </div>
-                </footer>
-              </article>
-            </div>
-            <aside class="imu-orientation-card" aria-labelledby="imuOrientationTitle">
-              <header class="imu-card__header">
-                <h3 id="imuOrientationTitle">Spatial orientation</h3>
-                <p>Live device attitude</p>
-              </header>
+        <section class="panel" id="imuPanel" aria-label="Device IMU data">
+          <canvas
+            id="imuAllChart"
+            class="imu-chart"
+            aria-label="Orientation, acceleration, and rotation plotted over time"
+            role="img"
+          ></canvas>
+          <div class="imu-data">
+            <div class="imu-orientation">
               <div class="imu-scene" aria-hidden="true">
                 <div class="imu-cube" id="imuCube">
                   <span class="imu-face imu-face--front">Y+</span>
@@ -363,21 +283,79 @@
                   <strong data-imu="ori-absolute">--</strong>
                 </div>
               </div>
-              <dl class="imu-summary">
-                <div>
-                  <dt>Samples</dt>
-                  <dd data-imu="samples">0</dd>
-                </div>
-                <div>
-                  <dt>Avg interval</dt>
-                  <dd data-imu="interval">--</dd>
-                </div>
-                <div>
-                  <dt>Last update</dt>
-                  <dd data-imu="timestamp">--</dd>
-                </div>
-              </dl>
-            </aside>
+              <button id="imuResetOrientation" class="ghost imu-reset-btn">
+                Reset orientation
+              </button>
+            </div>
+            <div class="imu-metrics">
+              <div class="imu-metric-group">
+                <h4>Linear acceleration</h4>
+                <dl>
+                  <div>
+                    <dt>X</dt>
+                    <dd data-imu="acc-x">0.00</dd>
+                  </div>
+                  <div>
+                    <dt>Y</dt>
+                    <dd data-imu="acc-y">0.00</dd>
+                  </div>
+                  <div>
+                    <dt>Z</dt>
+                    <dd data-imu="acc-z">0.00</dd>
+                  </div>
+                  <div>
+                    <dt>Magnitude</dt>
+                    <dd data-imu="acc-mag">0.00</dd>
+                  </div>
+                  <div>
+                    <dt>Peak</dt>
+                    <dd data-imu="acc-peak">0.00</dd>
+                  </div>
+                </dl>
+              </div>
+              <div class="imu-metric-group">
+                <h4>Rotation rate</h4>
+                <dl>
+                  <div>
+                    <dt>α</dt>
+                    <dd data-imu="rot-alpha">0.0</dd>
+                  </div>
+                  <div>
+                    <dt>β</dt>
+                    <dd data-imu="rot-beta">0.0</dd>
+                  </div>
+                  <div>
+                    <dt>γ</dt>
+                    <dd data-imu="rot-gamma">0.0</dd>
+                  </div>
+                  <div>
+                    <dt>Magnitude</dt>
+                    <dd data-imu="rot-mag">0.0</dd>
+                  </div>
+                  <div>
+                    <dt>Peak</dt>
+                    <dd data-imu="rot-peak">0.0</dd>
+                  </div>
+                </dl>
+              </div>
+              <div class="imu-metric-group">
+                <h4>Stream</h4>
+                <dl>
+                  <div>
+                    <dt>Samples</dt>
+                    <dd data-imu="samples">0</dd>
+                  </div>
+                  <div>
+                    <dt>Avg interval</dt>
+                    <dd data-imu="interval">--</dd>
+                  </div>
+                  <div>
+                    <dt>Last update</dt>
+                    <dd data-imu="timestamp">--</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
           </div>
         </section>
       </main>

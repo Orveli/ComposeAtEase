@@ -615,23 +615,32 @@ button.ghost:hover {
   border-color: rgba(248, 113, 113, 0.6);
 }
 
-.imu-status {
-  font-size: 0.8rem;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  color: rgba(224, 242, 254, 0.85);
-}
-.imu-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr);
+#imuPanel {
+  display: flex;
+  flex-direction: column;
   gap: 24px;
-  align-items: start;
 }
 
-.imu-orientation-card,
-.imu-chart-card {
+
+.imu-chart {
+  width: 100%;
+  height: clamp(320px, 45vh, 520px);
+  background: rgba(15, 23, 42, 0.85);
+  border-radius: 20px;
+  padding: 16px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  box-shadow:
+    inset 0 0 0 1px rgba(30, 64, 175, 0.2),
+    0 18px 46px rgba(15, 23, 42, 0.55);
+}
+
+.imu-data {
+  display: grid;
+  gap: 24px;
+}
+
+.imu-orientation,
+.imu-metric-group {
   background: rgba(15, 23, 42, 0.9);
   border-radius: 20px;
   padding: 20px;
@@ -639,38 +648,20 @@ button.ghost:hover {
   box-shadow: inset 0 0 0 1px rgba(30, 64, 175, 0.2);
 }
 
-.imu-orientation-card {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  max-width: 360px;
-  width: 100%;
-  justify-self: end;
-}
-
-.imu-chart-stack {
+.imu-orientation {
   display: grid;
   gap: 20px;
-  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
 }
 
-.imu-card__header h3 {
-  margin: 0;
-  font-size: 1rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #bfdbfe;
-}
-
-.imu-card__header p {
-  margin: 4px 0 0;
-  font-size: 0.75rem;
-  color: rgba(191, 219, 254, 0.7);
+.imu-reset-btn {
+  align-self: flex-start;
 }
 
 .imu-scene {
   position: relative;
   width: 100%;
+  max-width: 260px;
   aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
@@ -679,7 +670,7 @@ button.ghost:hover {
 }
 
 .imu-cube {
-  --cube-size: min(150px, 40vw);
+  --cube-size: min(180px, 40vw);
   position: relative;
   width: var(--cube-size);
   height: var(--cube-size);
@@ -757,59 +748,39 @@ button.ghost:hover {
   color: #f8fafc;
 }
 
-.imu-summary {
-  margin: 0;
-  padding: 0;
+
+.imu-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  list-style: none;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
-.imu-summary div {
-  background: rgba(15, 23, 42, 0.65);
-  border-radius: 14px;
-  padding: 12px;
-  box-shadow: inset 0 0 0 1px rgba(30, 64, 175, 0.35);
-}
-
-.imu-summary dt {
-  margin: 0;
-  font-size: 0.68rem;
+.imu-metric-group h4 {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: rgba(148, 197, 253, 0.75);
 }
 
-.imu-summary dd {
-  margin: 6px 0 0;
-  font-size: 0.95rem;
-  color: #f8fafc;
-}
-
-.imu-chart-card {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.imu-legend-groups {
+.imu-metric-group dl {
+  margin: 0;
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.imu-legend-groups section {
-  background: rgba(30, 41, 59, 0.45);
-  border-radius: 14px;
-  padding: 12px 14px;
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.18);
-  display: flex;
-  flex-direction: column;
   gap: 10px;
 }
 
-.imu-legend-groups h4 {
+.imu-metric-group dl div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.22);
+}
+
+.imu-metric-group dt {
   margin: 0;
   font-size: 0.75rem;
   text-transform: uppercase;
@@ -817,15 +788,10 @@ button.ghost:hover {
   color: rgba(148, 197, 253, 0.75);
 }
 
-.imu-chart-card canvas {
-  width: 100%;
-  height: clamp(1400px, 160vh, 2000px);
-  background: rgba(15, 23, 42, 0.8);
-  border-radius: 18px;
-  padding: 16px;
-  box-shadow:
-    inset 0 0 0 1px rgba(37, 99, 235, 0.24),
-    0 16px 36px rgba(15, 23, 42, 0.45);
+.imu-metric-group dd {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #f8fafc;
 }
 
 [data-imu] {
@@ -835,137 +801,11 @@ button.ghost:hover {
   white-space: nowrap;
 }
 
-.imu-legend__item span[data-imu] {
+.imu-orientation strong[data-imu],
+.imu-metric-group dd[data-imu] {
   display: inline-flex;
   justify-content: flex-end;
   min-width: 6ch;
-}
-
-.imu-orientation-values strong[data-imu] {
-  display: flex;
-  justify-content: flex-end;
-  min-width: 7ch;
-}
-
-.imu-chart-footer strong[data-imu] {
-  display: inline-flex;
-  justify-content: flex-end;
-  min-width: 7ch;
-}
-
-.imu-chart-card {
-  gap: 20px;
-}
-
-.imu-legend {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.imu-legend__item {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  letter-spacing: 0.05em;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: rgba(30, 41, 59, 0.55);
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.25);
-}
-
-.imu-legend__item span {
-  font-weight: 600;
-  color: #f8fafc;
-  display: inline-block;
-  min-width: 4.5ch;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.imu-legend__item--x {
-  border-color: rgba(248, 113, 113, 0.5);
-  color: rgba(248, 113, 113, 0.9);
-}
-
-.imu-legend__item--y {
-  border-color: rgba(45, 212, 191, 0.5);
-  color: rgba(45, 212, 191, 0.9);
-}
-
-.imu-legend__item--z {
-  border-color: rgba(59, 130, 246, 0.5);
-  color: rgba(59, 130, 246, 0.9);
-}
-
-.imu-legend__item--heading {
-  border-color: rgba(251, 191, 36, 0.5);
-  color: rgba(251, 191, 36, 0.92);
-}
-
-.imu-legend__item--tilt {
-  border-color: rgba(147, 197, 253, 0.5);
-  color: rgba(147, 197, 253, 0.9);
-}
-
-.imu-legend__item--roll {
-  border-color: rgba(236, 72, 153, 0.5);
-  color: rgba(236, 72, 153, 0.9);
-}
-
-.imu-legend__item--rot-alpha {
-  border-color: rgba(94, 234, 212, 0.5);
-  color: rgba(94, 234, 212, 0.9);
-}
-
-.imu-legend__item--rot-beta {
-  border-color: rgba(129, 140, 248, 0.5);
-  color: rgba(129, 140, 248, 0.9);
-}
-
-.imu-legend__item--rot-gamma {
-  border-color: rgba(251, 146, 60, 0.5);
-  color: rgba(251, 146, 60, 0.9);
-}
-
-.imu-chart-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  font-size: 0.85rem;
-  color: rgba(226, 232, 240, 0.9);
-  flex-wrap: wrap;
-}
-
-.imu-chart-footer div {
-  flex: 1;
-  background: rgba(30, 41, 59, 0.55);
-  border-radius: 12px;
-  padding: 10px 12px;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.imu-chart-footer span {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(148, 197, 253, 0.75);
-}
-
-.imu-chart-footer strong {
-  font-size: 1rem;
-  color: #f8fafc;
-  font-variant-numeric: tabular-nums;
-  display: inline-block;
-  min-width: 5ch;
 }
 
 @media (max-width: 960px) {
@@ -982,23 +822,8 @@ button.ghost:hover {
     padding: 20px;
   }
 
-  .imu-layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
-  }
-
-  .imu-chart-stack {
-    order: 1;
-  }
-
-  .imu-orientation-card {
-    order: 2;
-    max-width: none;
-    justify-self: stretch;
-  }
-
-  .imu-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .imu-metrics {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1019,20 +844,41 @@ button.ghost:hover {
     min-height: 220px;
   }
 
-  .imu-layout {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
-
   .imu-cube {
     --cube-size: min(120px, 55vw);
   }
 
-  .imu-summary {
-    grid-template-columns: 1fr;
+  .imu-orientation {
+    gap: 16px;
   }
 
-  .imu-chart-card canvas {
-    height: clamp(1100px, 140vh, 1500px);
+  .imu-orientation-values {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 960px) {
+  .imu-data {
+    grid-template-columns: minmax(260px, 320px) 1fr;
+    align-items: start;
+  }
+
+  .imu-orientation {
+    grid-template-columns: minmax(220px, 1fr) 1fr;
+    grid-template-areas:
+      'cube values'
+      'button button';
+  }
+
+  .imu-scene {
+    grid-area: cube;
+  }
+
+  .imu-orientation-values {
+    grid-area: values;
+  }
+
+  .imu-reset-btn {
+    grid-area: button;
   }
 }
