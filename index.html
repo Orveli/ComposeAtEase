@@ -361,6 +361,55 @@
             </div>
           </div>
         </section>
+        <section class="modular" id="modularPanel">
+          <header class="modular__header">
+            <h2>Modular Synth Lab</h2>
+            <div class="modular__toolbar">
+              <button type="button" id="modularFreezeBtn">Freeze UI</button>
+              <button type="button" id="modularResetImuBtn">Reset Orientation</button>
+              <button type="button" id="modularExportBtn">Export</button>
+              <button type="button" id="modularImportBtn">Import</button>
+            </div>
+          </header>
+          <div class="modular__content">
+            <aside class="modular__side modular__side--left">
+              <div class="modular__section">
+                <h3>Node Palette</h3>
+                <div id="modularPalette" class="modular__palette"></div>
+              </div>
+              <div class="modular__section">
+                <h3>Sources</h3>
+                <div id="modularSources" class="modular__sources"></div>
+              </div>
+            </aside>
+            <div class="modular__center">
+              <div class="modular__canvas-container" id="modularCanvasWrapper">
+                <svg
+                  id="modularCanvas"
+                  class="modular__canvas"
+                  viewBox="0 0 1200 720"
+                  role="presentation"
+                  aria-hidden="true"
+                ></svg>
+              </div>
+              <div class="modular__meters">
+                <canvas id="modularScope" class="modular__scope" width="320" height="120"></canvas>
+                <div id="modularImuMeters" class="modular__imu"></div>
+                <div id="modularNoteLog" class="modular__log"></div>
+              </div>
+            </div>
+            <aside class="modular__side modular__side--right">
+              <div id="modularProperties" class="modular__panel"></div>
+              <div id="modularMatrix" class="modular__panel modular__panel--matrix"></div>
+              <textarea
+                id="modularPatchJson"
+                class="modular__textarea"
+                rows="6"
+                spellcheck="false"
+              ></textarea>
+            </aside>
+          </div>
+        </section>
       </main>
     </div>
   </body>
