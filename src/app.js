@@ -66,6 +66,8 @@ import {
   imuResetOrientationBtn,
   imuStartTrackingBtn,
 } from './ui/elements.js';
+import { initializeModularSynth } from './modular/index.js';
+import { tickIMU } from './modular/engine.js';
 import {
   formatSeconds,
   formatLevel,
@@ -2356,6 +2358,13 @@ function handleDeviceMotion(event) {
     orientation: imuState.data.orientation,
   });
   renderImuData();
+  tickIMU({
+    acceleration: { x: ax, y: ay, z: az },
+    accelerationIncludingGravity: { x: gx, y: gy, z: gz },
+    rotationRate: { alpha: ra, beta: rb, gamma: rg },
+    orientation: imuState.data.orientation,
+    timestamp: typeof event.timeStamp === 'number' ? event.timeStamp : Date.now(),
+  });
 }
 
 function normalizeHeadingFromEvent(event) {
@@ -2394,6 +2403,13 @@ function handleDeviceOrientation(event) {
     imuResetOrientationBtn.disabled = !hasOrientationMeasurement(rawOrientation);
   }
   renderImuData();
+  tickIMU({
+    acceleration: imuState.data.acc,
+    accelerationIncludingGravity: imuState.data.accG,
+    rotationRate: imuState.data.rotation,
+    orientation: imuState.data.orientation,
+    timestamp: typeof event.timeStamp === 'number' ? event.timeStamp : Date.now(),
+  });
 }
 
 async function initializeImuPanel() {
@@ -2808,6 +2824,7 @@ function init() {
   renderActiveTrack();
   initControls();
   initializeImuPanel();
+  initializeModularSynth();
 }
 
 init();

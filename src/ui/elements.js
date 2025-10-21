@@ -110,3 +110,21 @@ export const imuCubeEl = byId('imuCube');
 export const imuCombinedChartEl = byId('imuAllChart');
 export const imuResetOrientationBtn = byId('imuResetOrientation');
 export const imuStartTrackingBtn = byId('imuStartTracking');
+
+export const modularElements = {
+  panel: byId('modularPanel'),
+  canvas: byId('modularCanvas'),
+  canvasWrapper: byId('modularCanvasWrapper'),
+  palette: byId('modularPalette'),
+  sources: byId('modularSources'),
+  properties: byId('modularProperties'),
+  matrix: byId('modularMatrix'),
+  patchTextarea: byId('modularPatchJson'),
+  freezeBtn: byId('modularFreezeBtn'),
+  resetImuBtn: byId('modularResetImuBtn'),
+  exportBtn: byId('modularExportBtn'),
+  importBtn: byId('modularImportBtn'),
+  scopeCanvas: byId('modularScope'),
+  imuMeters: byId('modularImuMeters'),
+  noteLog: byId('modularNoteLog'),
+};
