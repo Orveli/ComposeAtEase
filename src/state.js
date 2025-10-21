@@ -11,9 +11,7 @@ export const state = {
   customPresets: [],
 };
 
-const masterLimiter = new Tone.Limiter(-1).toDestination();
-export const masterVolume = new Tone.Volume(-8);
-masterVolume.connect(masterLimiter);
+export const masterVolume = new Tone.Volume(-8).toDestination();
 export const trackInstruments = new Map();
 export const trackParts = new Map();
 export const pointerInteractions = new Map();
