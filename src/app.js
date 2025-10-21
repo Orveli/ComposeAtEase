@@ -480,14 +480,14 @@ function disposeInstrument(trackId) {
   const instrument = trackInstruments.get(trackId);
   if (!instrument) return;
   if (instrument.type === 'synth') {
-    if (instrument.disposables?.length) {
-      instrument.disposables.forEach((node) => {
+    if (instrument.nodes?.length) {
+      instrument.nodes.forEach((node) => {
         if (typeof node.dispose === 'function') {
           node.dispose();
         }
       });
-    } else if (instrument.synth?.dispose) {
-      instrument.synth.dispose();
+    } else {
+      instrument.node.dispose();
     }
   } else if (instrument.type === 'drum') {
     Object.values(instrument.nodes).forEach((voice) => {
@@ -500,115 +500,77 @@ function disposeInstrument(trackId) {
 }
 
 function createSynthInstrument(config) {
-  const normalized = cloneSynthConfig(config);
-
+  const nodes = [];
   const synth = new Tone.PolySynth(Tone.Synth, {
     maxPolyphony: 16,
-    oscillator: { ...normalized.oscillator },
-    envelope: { ...normalized.envelope },
+    oscillator: { ...config.oscillator },
+    envelope: { ...config.envelope },
   });
+  nodes.push(synth);
+  let lastNode = synth;
 
   const filter = new Tone.Filter({
-    type: normalized.filter?.type || DEFAULT_SYNTH_CONFIG.filter.type,
-    frequency: normalized.filter?.frequency ?? DEFAULT_SYNTH_CONFIG.filter.frequency,
-    Q: normalized.filter?.q ?? DEFAULT_SYNTH_CONFIG.filter.q,
+    type: config.filter?.type || DEFAULT_SYNTH_CONFIG.filter.type,
+    frequency: config.filter?.frequency ?? DEFAULT_SYNTH_CONFIG.filter.frequency,
+    Q: config.filter?.q ?? DEFAULT_SYNTH_CONFIG.filter.q,
   });
+  nodes.push(filter);
+  lastNode.connect(filter);
+  lastNode = filter;
 
-  const chorusSettings = normalized.effects?.chorus || DEFAULT_SYNTH_CONFIG.effects.chorus;
-  const chorus = new Tone.Chorus({
-    frequency: chorusSettings.rate,
-    depth: chorusSettings.depth,
-    delayTime: 2.5,
-    spread: 180,
-    wet: chorusSettings.enabled ? chorusSettings.mix : 0,
-  }).start();
+  const chorusConfig = config.effects?.chorus;
+  if (chorusConfig?.enabled) {
+    const chorus = new Tone.Chorus({
+      frequency: chorusConfig.rate,
+      depth: chorusConfig.depth,
+      delayTime: 2.5,
+      spread: 180,
+      wet: chorusConfig.mix,
+    }).start();
+    nodes.push(chorus);
+    lastNode.connect(chorus);
+    lastNode = chorus;
+  }
 
-  const delaySettings = normalized.effects?.delay || DEFAULT_SYNTH_CONFIG.effects.delay;
-  const delay = new Tone.FeedbackDelay({
-    delayTime: delaySettings.time,
-    feedback: delaySettings.feedback,
-    wet: delaySettings.enabled ? delaySettings.mix : 0,
-  });
+  const delayConfig = config.effects?.delay;
+  if (delayConfig?.enabled) {
+    const delay = new Tone.FeedbackDelay({
+      delayTime: delayConfig.time,
+      feedback: delayConfig.feedback,
+      wet: delayConfig.mix,
+    });
+    nodes.push(delay);
+    lastNode.connect(delay);
+    lastNode = delay;
+  }
 
-  const reverbSettings = normalized.effects?.reverb || DEFAULT_SYNTH_CONFIG.effects.reverb;
-  const reverb = new Tone.Reverb({
-    decay: reverbSettings.decay,
-    preDelay: reverbSettings.preDelay,
-    wet: reverbSettings.enabled ? reverbSettings.mix : 0,
-  });
+  const reverbConfig = config.effects?.reverb;
+  if (reverbConfig?.enabled) {
+    const reverb = new Tone.Reverb({
+      decay: reverbConfig.decay,
+      preDelay: reverbConfig.preDelay,
+      wet: reverbConfig.mix,
+    });
+    nodes.push(reverb);
+    lastNode.connect(reverb);
+    lastNode = reverb;
+  }
 
   const output = new Tone.Gain(1);
-
-  synth.connect(filter);
-  filter.connect(chorus);
-  chorus.connect(delay);
-  delay.connect(reverb);
-  reverb.connect(output);
+  nodes.push(output);
+  lastNode.connect(output);
   output.connect(masterVolume);
 
-  return {
-    synth,
-    filter,
-    effects: { chorus, delay, reverb },
-    output,
-    disposables: [synth, filter, chorus, delay, reverb, output],
-  };
-}
-
-function applySynthConfigToInstrument(instrument, config) {
-  if (!instrument || instrument.type !== 'synth') return;
-  const normalized = cloneSynthConfig(config);
-
-  instrument.synth.set({
-    oscillator: { ...normalized.oscillator },
-    envelope: { ...normalized.envelope },
-  });
-
-  if (instrument.filter) {
-    instrument.filter.set({
-      type: normalized.filter?.type || DEFAULT_SYNTH_CONFIG.filter.type,
-      frequency: normalized.filter?.frequency ?? DEFAULT_SYNTH_CONFIG.filter.frequency,
-      Q: normalized.filter?.q ?? DEFAULT_SYNTH_CONFIG.filter.q,
-    });
-  }
-
-  const chorusConfig = normalized.effects?.chorus || DEFAULT_SYNTH_CONFIG.effects.chorus;
-  const chorus = instrument.effects?.chorus;
-  if (chorus) {
-    chorus.frequency.value = chorusConfig.rate;
-    chorus.depth = chorusConfig.depth;
-    chorus.wet.value = chorusConfig.enabled ? chorusConfig.mix : 0;
-  }
-
-  const delayConfig = normalized.effects?.delay || DEFAULT_SYNTH_CONFIG.effects.delay;
-  const delay = instrument.effects?.delay;
-  if (delay) {
-    delay.delayTime.value = delayConfig.time;
-    delay.feedback.value = delayConfig.feedback;
-    delay.wet.value = delayConfig.enabled ? delayConfig.mix : 0;
-  }
-
-  const reverbConfig = normalized.effects?.reverb || DEFAULT_SYNTH_CONFIG.effects.reverb;
-  const reverb = instrument.effects?.reverb;
-  if (reverb) {
-    reverb.decay = reverbConfig.decay;
-    reverb.preDelay = reverbConfig.preDelay;
-    reverb.wet.value = reverbConfig.enabled ? reverbConfig.mix : 0;
-  }
+  return { synth, nodes };
 }
 
 function ensureInstrumentForTrack(track) {
   if (track.type === 'synth') {
     const config = track.synthConfig || cloneSynthConfig(getPresetConfigById(track.presetId));
     track.synthConfig = cloneSynthConfig(config);
-    const existing = trackInstruments.get(track.id);
-    if (existing?.type === 'synth') {
-      applySynthConfigToInstrument(existing, track.synthConfig);
-    } else {
-      disposeInstrument(track.id);
-      const instrument = createSynthInstrument(track.synthConfig);
-      trackInstruments.set(track.id, { type: 'synth', ...instrument });
-    }
+    disposeInstrument(track.id);
+    const { synth, nodes } = createSynthInstrument(track.synthConfig);
+    trackInstruments.set(track.id, { type: 'synth', node: synth, nodes });
   } else if (track.type === 'drum') {
     ensureDrumSamples(track);
     disposeInstrument(track.id);
@@ -1620,7 +1582,7 @@ function triggerSynth(trackId, note, time) {
   const instrument = trackInstruments.get(trackId);
   if (!instrument || instrument.type !== 'synth') return;
   const duration = note.len * getGridDurationSeconds();
-  instrument.synth.triggerAttackRelease(
+  instrument.node.triggerAttackRelease(
     Tone.Frequency(getMidiForLane(note.laneIndex, note.octave), 'midi'),
     duration,
     time,
